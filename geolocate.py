@@ -8,132 +8,131 @@ Created on 4 Sep 2014
 
 @author: af
 '''
-from params import *
-import codecs
-import gzip
-import matplotlib as mpl
-from scipy.sparse.lil import lil_matrix
-from sklearn.feature_extraction import stop_words
+from GPy import kern, likelihoods
+import GPy
+from GPy.core.gp import GP
+from GPy.examples import regression
+from IPython.core.debugger import Tracer
 from _collections import defaultdict
-from sklearn.decomposition.factor_analysis import FactorAnalysis
-from sklearn.ensemble.gradient_boosting import GradientBoostingClassifier
-from sklearn.decomposition.nmf import NMF
-from haversine import haversine
-from matplotlib.projections import projection_factory
-mpl.use('Agg')
-import shutil
-import os
-import re
-import itertools
-from scipy import linalg
-from scipy.stats import threshold
-from sklearn import mixture, ensemble
+import cPickle
+import codecs
+import codecs
+from collections import Counter
+from colorama import init, Fore, Back, Style
 import copy
-from scipy.io import mmwrite
-from math import radians, cos, sin, asin, sqrt
-from sklearn import cross_validation
-import weighted as wst
-from sklearn import metrics
-from  sklearn.datasets import load_files
-import string
-import networkx as nx
-import matplotlib.patches as mpatches
+import csv
 from datetime import datetime
+from datetime import datetime
+import glob
+import gzip
+import gzip
+from haversine import haversine
+import itertools
+import logging
+from math import radians, cos, sin, asin, sqrt
+from math import radians, sin, cos, sqrt, asin
+from math import sqrt
+import math
+from matplotlib.ticker import NullFormatter
+import nltk
+from numpy import float16, float32, float64
+import numpy
+from os import path
+import os
+import os
+import pdb
+import pickle
+import random
+import re
+from scipy import linalg
+from scipy import mean
+from scipy.io import mmwrite
+from scipy.sparse import csr_matrix, coo_matrix, dok_matrix
+from scipy.sparse.lil import lil_matrix
+from scipy.spatial import ConvexHull, convex_hull_plot_2d
+from scipy.spatial.distance import pdist
+from scipy.stats import logistic
+from scipy.stats import threshold
 import sets
-from sklearn.metrics.pairwise import euclidean_distances, pairwise_distances
+import shutil
+from sklearn import cross_validation
+from sklearn import linear_model
+from sklearn import metrics
+from sklearn import mixture, ensemble
+from  sklearn.datasets import load_files
+from sklearn.datasets import dump_svmlight_file
 from sklearn.decomposition import *
-from sklearn.preprocessing import normalize
 from sklearn.decomposition import *
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.feature_extraction import stop_words
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, strip_accents_ascii, strip_accents_unicode
+from sklearn.feature_selection import SelectKBest
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import PassiveAggressiveClassifier
-from sklearn import linear_model
 from sklearn.linear_model import Perceptron
-from sklearn.datasets import dump_svmlight_file
 from sklearn.linear_model import RidgeClassifier
 from sklearn.linear_model import SGDClassifier
-# from sklearn.linear_model import LogisticRegression
+from sklearn.linear_model.coordinate_descent import MultiTaskLasso, ElasticNet
+from sklearn.linear_model.sgd_fast import Log
+from sklearn.metrics.pairwise import euclidean_distances, pairwise_distances
 from sklearn.naive_bayes import BernoulliNB, MultinomialNB
 from sklearn.neighbors import KNeighborsClassifier
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
 from sklearn.neighbors import NearestCentroid
-from sklearn.svm import LinearSVC, SVC
-import pdb
-from IPython.core.debugger import Tracer
-from sklearn.utils.extmath import density
-import scipy.sparse as sparse
 from sklearn.neighbors import NearestNeighbors
-from sklearn.feature_selection import SelectKBest
+from sklearn.neighbors import NearestNeighbors
+from sklearn.preprocessing import normalize
+from sklearn.semi_supervised import *
+from sklearn.svm import LinearSVC, SVC
+from sklearn.utils.extmath import density
+import string
+import sys
+import sys
+import theano
+from theano.tensor.basic import dmatrix
+import time
+
+import matplotlib as mpl
+import  matplotlib.collections as collections
+import matplotlib.lines as mlines
+import matplotlib.patches as mpatches
+import matplotlib.patches as mpatches
+import matplotlib.path as mpath
+import matplotlib.pyplot as plt
+import matplotlib.ticker as ticker
+import networkx as nx
+import numpy as np
+import numpy as np
+from params import *
+import pylab as pb
+import scipy.sparse as sparse
+import theano.tensor as T
+import weighted as wst
+import weightedstats as ws
+
+
+mpl.use('Agg')
+# from sklearn.linear_model import LogisticRegression
 # this is just for printing colored in shell, you don't want it you comment it and its init line
-from colorama import init, Fore, Back, Style
-import logging
 init()
 
 # from extract import get_tokens
 # from time import time
-from math import sqrt
-from matplotlib.ticker import NullFormatter
-import numpy as np
-import matplotlib.pyplot as plt
-from collections import Counter
-import random
-from os import path
-import math
-from datetime import datetime
-from scipy.stats import logistic
-import glob
-import matplotlib.path as mpath
-import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
-import  matplotlib.collections as collections
-import matplotlib.ticker as ticker
-import pylab as pb
-from theano.tensor.basic import dmatrix
-from sklearn.linear_model.coordinate_descent import MultiTaskLasso, ElasticNet
-from sklearn.semi_supervised import *
-from scipy.spatial.distance import pdist
 pb.ion()
-from GPy.core.gp import GP
-import csv
-from GPy.examples import regression
-from sklearn.linear_model.sgd_fast import Log
-import numpy as np
-import GPy
-from GPy import kern, likelihoods
 # from GPy.models_modules.gp_regression import GPRegression
-import codecs
-from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.neighbors import NearestNeighbors
-from numpy import float16, float32, float64
-from scipy.sparse import csr_matrix, coo_matrix, dok_matrix
-from math import radians, sin, cos, sqrt, asin
-import sys
-from scipy import mean
-import weightedstats as ws
 __docformat__ = 'restructedtext en'
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
-#logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-#rootLogger = logging.getLogger()
+# logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+# rootLogger = logging.getLogger()
 
-#fileHandler = logging.FileHandler("{0}/{1}.log".format('.', 'log.log'))
-#fileHandler.setFormatter(logFormatter)
-#rootLogger.addHandler(fileHandler)
+# fileHandler = logging.FileHandler("{0}/{1}.log".format('.', 'log.log'))
+# fileHandler.setFormatter(logFormatter)
+# rootLogger.addHandler(fileHandler)
 
-#consoleHandler = logging.StreamHandler()
-#consoleHandler.setFormatter(logFormatter)
-#rootLogger.addHandler(consoleHandler)
+# consoleHandler = logging.StreamHandler()
+# consoleHandler.setFormatter(logFormatter)
+# rootLogger.addHandler(consoleHandler)
 
-import cPickle
-import gzip
-import os
-import sys
-import time
-import pickle
-import numpy
-import nltk
-import theano
-import theano.tensor as T
 print str(datetime.now())
 script_start_time = time.time()
 
@@ -192,7 +191,7 @@ def users(file, type='train', write=False, readText=True):
         if TEXT_ONLY:
             print('mentions are removed.')
 
-    #with codecs.open(file, 'r', encoding=data_encoding) as inf:
+    # with codecs.open(file, 'r', encoding=data_encoding) as inf:
     with gzip.open(file, 'r') as inf:
         for line in inf:
             # print line
@@ -444,7 +443,7 @@ def loss(preds, U_test, loss='median', save=False, save_results_bucket_size=Fals
         distances_from_center.append(distance(lat, lon, center_of_us[0], center_of_us[1]))
         distances_from_nyc.append(distance(lat, lon, nyc[0], nyc[1]))
         distances_from_la.append(distance(lat, lon, la[0], la[1]))
-        #if preds[i] == int(testClasses[user]):
+        # if preds[i] == int(testClasses[user]):
         #    acc += 1
         # print str(Y_test[i]) + " " + str(preds[i])
         prediction = categories[preds[i]]
@@ -458,11 +457,11 @@ def loss(preds, U_test, loss='median', save=False, save_results_bucket_size=Fals
             dd = distance(lat, lon, medianlat, medianlon)
             distances.append(dd)
             if error_heatmap:
-                num_in_region = uniformer[str(int(lat))+',' + str(int(lon))]
+                num_in_region = uniformer[str(int(lat)) + ',' + str(int(lon))]
                 heatmap_lats.append(lat)
                 heatmap_lons.append(lon)
                 heatmap_values.append(dd)
-                uniformer[str(int(lat))+',' + str(int(lon))] = num_in_region + 1
+                uniformer[str(int(lat)) + ',' + str(int(lon))] = num_in_region + 1
                 class_error[user_original_class].append(dd)
             
         elif predictionCoordinate == 'mean':
@@ -593,10 +592,10 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
         # clf = linear_model.LogisticRegression(C=1.0, penalty='l2')
         # alpha = 0.000001
         clf = SGDClassifier(loss='log', alpha=regul, penalty=penalty, l1_ratio=0.9, learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=10, fit_intercept=fit_intercept)
-        #clf = LabelPropagation(kernel='rbf', gamma=50, n_neighbors=7, alpha=1, max_iter=30, tol=0.001)
-        #clf = LabelSpreading(kernel='rbf', gamma=20, n_neighbors=7, alpha=0.2, max_iter=30, tol=0.001)
-        #clf = ensemble.AdaBoostClassifier()
-        #clf = ensemble.RandomForestClassifier(n_jobs=10)
+        # clf = LabelPropagation(kernel='rbf', gamma=50, n_neighbors=7, alpha=1, max_iter=30, tol=0.001)
+        # clf = LabelSpreading(kernel='rbf', gamma=20, n_neighbors=7, alpha=0.2, max_iter=30, tol=0.001)
+        # clf = ensemble.AdaBoostClassifier()
+        # clf = ensemble.RandomForestClassifier(n_jobs=10)
         # clf = MultiTaskLasso()
         # clf = ElasticNet()
         # clf = linear_model.Lasso(alpha = 0.1)
@@ -608,7 +607,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
         # clf = SVC(C=1.0, kernel='rbf', degree=3, gamma=0.0, coef0=0.0, shrinking=True, probability=False, tol=0.001, cache_size=200, class_weight=None, verbose=False, max_iter=-1, random_state=None)
         # clf = Perceptron(n_iter=50)
         # clf = PassiveAggressiveClassifier(n_iter=50)
-        #clf = KNeighborsClassifier(n_neighbors=10)
+        # clf = KNeighborsClassifier(n_neighbors=10)
         # clf = NearestCentroid()
         # clf = MultinomialNB(alpha=.01)
     
@@ -637,9 +636,9 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
             total_param_count = clf.coef_.shape[0] * clf.coef_.shape[1]
             zero_percent = int(100 * float(zero_count) / total_param_count)
             print('%d percent sparse' % (zero_percent))
-            #if zero_percent > 50:
-                #print('sparsifying clf.coef_ to free memory')
-                #clf.sparsify()
+            # if zero_percent > 50:
+                # print('sparsifying clf.coef_ to free memory')
+                # clf.sparsify()
         if save_model:
             print('dumpinng the model in %s' % (model_dump_file))
             with open(model_dump_file, 'wb') as outf:
@@ -652,7 +651,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     if plot_matrix and hasattr(clf, 'coef_'):
         print('plotting the first 100 features of the weight matrix...')
         plt.close()
-        plt.pcolormesh(clf.coef_[:,0:100], cmap='RdBu', vmin=np.min(clf.coef_[:,0:100]), vmax=np.max(clf.coef_[:,0:100]))
+        plt.pcolormesh(clf.coef_[:, 0:100], cmap='RdBu', vmin=np.min(clf.coef_[:, 0:100]), vmax=np.max(clf.coef_[:, 0:100]))
         plt.savefig(path.join(GEOTEXT_HOME, 'matrix.pdf'), format='pdf')
         plt.close()
     report_verbose = True
@@ -731,13 +730,13 @@ def initialize(partitionMethod, granularity, write=False, readText=True, reload_
 
     reload_file = path.join(GEOTEXT_HOME + '/init_' + DATASETS[DATASET_NUMBER - 1] + '_' + partitionMethod + '_' + str(BUCKET_SIZE) + '.pkl')
 
-    logging.info( 'reading (user_info.) train, dev and test file and building trainUsers, devUsers and testUsers with their locations')
+    logging.info('reading (user_info.) train, dev and test file and building trainUsers, devUsers and testUsers with their locations')
     users(trainfile, 'train', write, readText=readText)
     users(devfile, 'dev', write, readText=readText)
     users(testfile, 'test', write, readText=readText)
-    logging.info( "the number of train" + " users is " + str(len(trainUsers)))
-    logging.info( "the number of test" + " users is " + str(len(testUsers)))
-    logging.info( "the number of dev" + " users is " + str(len(devUsers)))
+    logging.info("the number of train" + " users is " + str(len(trainUsers)))
+    logging.info("the number of test" + " users is " + str(len(testUsers)))
+    logging.info("the number of dev" + " users is " + str(len(devUsers)))
 
     if not regression:
         create_directories(granularity, partitionMethod, write)  
@@ -746,7 +745,7 @@ def initialize(partitionMethod, granularity, write=False, readText=True, reload_
             pickle.dump((classLatMean, classLonMedian, classLatMedian, classLonMean, userLocation, categories, trainUsers, trainClasses, testUsers, testClasses, devUsers, devClasses), outf)
     else:
         logging.info('Not discretising locations as regression option is on!')
-    logging.info( "initialization finished")
+    logging.info("initialization finished")
 
 
 def factorize(X, transformees, factorizer=None):
@@ -755,7 +754,7 @@ def factorize(X, transformees, factorizer=None):
     else:
         print factorizer
     # dic_learner = DictionaryLearning(n_components=100, alpha=1, max_iter=100, tol=1e-8, fit_algorithm='lars', transform_algorithm='omp', transform_n_nonzero_coefs=None, transform_alpha=None, n_jobs=30, code_init=None, dict_init=None, verbose=True, split_sign=None, random_state=None)
-    #dic_learner = MiniBatchDictionaryLearning(n_components=20, alpha=1, n_iter=100, fit_algorithm='lars', n_jobs=30, batch_size=1000, shuffle=True, dict_init=None, transform_algorithm='omp', transform_n_nonzero_coefs=None, transform_alpha=None, verbose=True, split_sign=True, random_state=None)
+    # dic_learner = MiniBatchDictionaryLearning(n_components=20, alpha=1, n_iter=100, fit_algorithm='lars', n_jobs=30, batch_size=1000, shuffle=True, dict_init=None, transform_algorithm='omp', transform_n_nonzero_coefs=None, transform_alpha=None, verbose=True, split_sign=True, random_state=None)
     # dic_learner = PCA(n_components=500)
     
     
@@ -770,7 +769,7 @@ def factorize(X, transformees, factorizer=None):
         results.append(feature_matrix)
     return results
 
-def asclassification(granularity, partitionMethod, use_mention_dictionary=False, use_sparse_code=False, penalty =None, fit_intercept=False, norm=None, binary=False, sublinear=False, factorizer=None, read_vocab=False, use_idf=True):
+def asclassification(granularity, partitionMethod, use_mention_dictionary=False, use_sparse_code=False, penalty=None, fit_intercept=False, norm=None, binary=False, sublinear=False, factorizer=None, read_vocab=False, use_idf=True):
 
     if read_vocab:
         vocab_file = path.join(GEOTEXT_HOME, 'vocab.pkl')
@@ -815,9 +814,9 @@ def asclassification(granularity, partitionMethod, use_mention_dictionary=False,
             reguls_coefs = [2 ** -19]
     elif DATASET_NUMBER == 3:
         reguls_coefs = [1e-8, 5e-8, 1e-7, 5e-7, 1e-6]
-    if penalty=='none':
+    if penalty == 'none':
         reguls_coefs = [1e-200]
-    #for regul in reguls_coefs:
+    # for regul in reguls_coefs:
     for regul in [reguls[DATASET_NUMBER - 1]]:
         preds, probs, U_test, meanTest, medianTest, acc_at_161_test, meanDev, medianDev, acc_at_161_dev, non_zero_parameters = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=granularity, regul=regul, partitionMethod=partitionMethod, penalty=penalty, fit_intercept=fit_intercept, reload_model=False)
         regul_acc[regul] = acc_at_161_dev
@@ -833,7 +832,7 @@ def asclassification(granularity, partitionMethod, use_mention_dictionary=False,
     t_mean, t_median, t_acc = loss(best_test_preds, U_test)
     
     return t_mean, t_median, t_acc, best_dev_mean, best_dev_median, best_dev_acc
-    #return preds, probs, U_test, meanTest, medianTest, acc_at_161_test, meanDev, medianDev, acc_at_161_dev
+    # return preds, probs, U_test, meanTest, medianTest, acc_at_161_test, meanDev, medianDev, acc_at_161_dev
 
 
 def locationStr2Float(locationStr):
@@ -906,7 +905,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     U_test = [u for u in sorted(testUsers)]
     U_dev = [u for u in sorted(devUsers)]
     text_str = ''
-    if text_prior!='none':
+    if text_prior != 'none':
         text_str = '.' + text_prior
     weighted_str = ''
     if DIRECT_GRAPH_WEIGHTED:
@@ -917,8 +916,8 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     
     # split a training set and a test set
     Y_train = np.asarray([trainClasses[u] for u in U_train])
-    #Y_test = np.asarray([testClasses[u] for u in U_test])
-    #Y_dev = np.asarray([devClasses[u] for u in U_dev])
+    # Y_test = np.asarray([testClasses[u] for u in U_test])
+    # Y_dev = np.asarray([devClasses[u] for u in U_dev])
 
     
     if DEVELOPMENT:
@@ -927,12 +926,12 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
         devStr = ''
 
     
-    if text_prior!='none':
-        logging.info( "tex prior is " + text_prior)
+    if text_prior != 'none':
+        logging.info("tex prior is " + text_prior)
         # read users and predictions
         result_dump_file = path.join(GEOTEXT_HOME, 'results-' + DATASETS[DATASET_NUMBER - 1] + '-' + partitionMethod + '-' + str(BUCKET_SIZE) + '.pkl')
         t_preds, d_preds, t_users, d_users, t_probs, d_probs = None, None, None, None, None, None
-        logging.info( "reading the text learner results from " + result_dump_file)
+        logging.info("reading the text learner results from " + result_dump_file)
         with open(result_dump_file, 'rb') as inf:
             t_preds, d_preds, t_users, d_users, t_probs, d_probs = pickle.load(inf)
 
@@ -951,7 +950,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
               
 
     id_user_file = path.join(GEOTEXT_HOME, 'id_user_' + partitionMethod + '_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str)
-    logging.info( "writing id_user in " + id_user_file)
+    logging.info("writing id_user in " + id_user_file)
     with codecs.open(id_user_file, 'w', 'ascii') as outf:
         for i in range(0, len(U_train)):
             outf.write(str(i) + '\t' + U_train[i] + '\n')
@@ -963,15 +962,15 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
                 outf.write(str(i + len(U_train)) + '\t' + U_test[i] + '\n')
 
     seed_file = path.join(GEOTEXT_HOME, 'seeds_' + partitionMethod + '_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str)
-    logging.info( "writing seeds in " + seed_file)
+    logging.info("writing seeds in " + seed_file)
     with codecs.open(seed_file, 'w', 'ascii') as outf:
         for i in range(0, len(U_train)):
             outf.write(str(i) + '\t' + str(Y_train[i]) + '\t' + '1.0' + '\n')
 
         if text_prior == 'dongle':
             for i in range(0, len(dongle_nodes)):
-                #w = np.max(dongle_probs[i])
-                w=1
+                # w = np.max(dongle_probs[i])
+                w = 1
                 outf.write(str(i + len(U_train)) + '.T' + '\t' + str(dongle_preds[i]) + '\t' + str(w) + '\n')
         elif text_prior == 'direct':
             w = np.max(dongle_probs[i])
@@ -1006,19 +1005,19 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
         assert(len(u_unknown) == len(dongle_nodes)), 'the number of text/dev users is not equal to the number of text predictions.'
     U_all = U_train + u_unknown 
 
-    logging.info( "The number of test users found in train users is " + str(doubles))
-    logging.info( "Double users: " + str(double_nodes))
+    logging.info("The number of test users found in train users is " + str(doubles))
+    logging.info("Double users: " + str(double_nodes))
     vocab_cnt = len(U_all)
     idx = range(vocab_cnt)
     node_id = dict(zip(U_all, idx))
     # data and indices of a coo matrix to be populated
     coordinates = Counter()
     
-    #for node, id in node_id.iteritems():
+    # for node, id in node_id.iteritems():
     #    node_lower_id[node.lower()] = id
     assert (len(node_id) == len(U_train) + len(u_unknown)), 'number of unique users is not eq u_train + u_test'
-    logging.info( "the number of nodes is " + str(vocab_cnt))
-    logging.info( "Adding the direct relationships...")
+    logging.info("the number of nodes is " + str(vocab_cnt))
+    logging.info("Adding the direct relationships...")
     token_pattern1 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
     token_pattern1 = re.compile(token_pattern1)
     mention_users = defaultdict(Counter)
@@ -1029,7 +1028,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     for user, text in trainText.iteritems():
         user_id = node_id[user]
         if i % tenpercent == 0:
-            logging.info( str(10 * i / tenpercent) + "%")
+            logging.info(str(10 * i / tenpercent) + "%")
         i += 1  
         mentions = [u.lower() for u in token_pattern1.findall(text)] 
         mentionDic = Counter(mentions)
@@ -1051,7 +1050,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     
     
     
-    logging.info( "adding the test graph")
+    logging.info("adding the test graph")
     for user, text in u_text_unknown.iteritems():
         user_id = node_id[user]
         mentions = [u.lower() for u in token_pattern1.findall(text)]
@@ -1074,8 +1073,8 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     
     
     logging.info("Direct Relationships: " + str(len(coordinates)))
-    logging.info("Directly related users: " + str(len(directly_connected_users)) + " percent: " + str(100.0*len(directly_connected_users)/len(U_all)))
-    logging.info( "Adding the collapsed indirect relationships...")
+    logging.info("Directly related users: " + str(len(directly_connected_users)) + " percent: " + str(100.0 * len(directly_connected_users) / len(U_all)))
+    logging.info("Adding the collapsed indirect relationships...")
 
     l = len(mention_users)
     tenpercent = l / 10
@@ -1083,7 +1082,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     celebrities_count = 0
     for mention, user_ids in mention_users.iteritems():
         if i % tenpercent == 0:
-            logging.info( str(10 * i / tenpercent) + "%")
+            logging.info(str(10 * i / tenpercent) + "%")
         i += 1  
         if len(user_ids) > CELEBRITY_THRESHOLD:
             celebrities_count += 1
@@ -1094,22 +1093,22 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
                 if user_id1 < user_id2:
                     coordinates[(user_id1, user_id2)] += (freq1 + freq2)
 
-    #free memory by deleting mention_users
+    # free memory by deleting mention_users
     del mention_users
-    logging.info( "The number of celebrities is " + str(celebrities_count) + " .")
-    logging.info( "The number of edges is " + str(len(coordinates)))
+    logging.info("The number of celebrities is " + str(celebrities_count) + " .")
+    logging.info("The number of edges is " + str(len(coordinates)))
     l = len(coordinates)
     tenpercent = l / 10
     input_graph_file = path.join(GEOTEXT_HOME, 'input_graph_' + partitionMethod + '_' + str(BUCKET_SIZE) + '_' + celebrityStr + devStr + text_str + weighted_str)
     logging.info("writing the input_graph in " + input_graph_file)
-    with codecs.open(input_graph_file, 'w', 'ascii', buffering= pow(2,6) * pow(2, 20)) as outf:
+    with codecs.open(input_graph_file, 'w', 'ascii', buffering=pow(2, 6) * pow(2, 20)) as outf:
         i = 1
         for nodes, w in coordinates.iteritems():
             xindx, yindx = nodes
             if not DIRECT_GRAPH_WEIGHTED:
                 w = 1.0
             if i % tenpercent == 0:
-                logging.info( "processing " + str(10 * i / tenpercent) + "%")
+                logging.info("processing " + str(10 * i / tenpercent) + "%")
             i += 1
             outf.write(str(xindx) + '\t' + str(yindx) + '\t' + str(w) + '\n')
             if build_networkx_graph:
@@ -1123,14 +1122,14 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
         elif text_prior == 'backoff':
             pass
     
-    u1s = [a for a,b in coordinates]
-    u2s = [b for a,b in coordinates]
+    u1s = [a for a, b in coordinates]
+    u2s = [b for a, b in coordinates]
     us = set(u1s + u2s)
     logging.info("the number of disconnected users is " + str(len(U_all) - len(us)))
     logging.info("the number of disconnected test users is " + str(len(u_unknown) - len([a for a in us if a >= len(U_train)])))
     output_file = path.join(GEOTEXT_HOME, 'label_prop_output_' + DATASETS[DATASET_NUMBER - 1] + '_' + partitionMethod + '_' + str(BUCKET_SIZE) + '_' + str(celeb_threshold) + devStr + text_str + weighted_str)
     logging.info("output file: " + output_file)
-    #logging.info(str(disconnected_us))
+    # logging.info(str(disconnected_us))
 
 def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='none', CELEBRITY_THRESHOLD=100000, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=True, partitionMethod='median', postfix='.nx'):
     global mentions
@@ -1144,7 +1143,7 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
     U_test = [u for u in sorted(testUsers)]
     U_dev = [u for u in sorted(devUsers)]
     text_str = ''
-    if text_prior!='none':
+    if text_prior != 'none':
         text_str = '.' + text_prior
     weighted_str = ''
     if DIRECT_GRAPH_WEIGHTED:
@@ -1164,12 +1163,12 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
 
 
     
-    if text_prior!='none':
-        logging.info( "tex prior is " + text_prior)
+    if text_prior != 'none':
+        logging.info("tex prior is " + text_prior)
         # read users and predictions
         result_dump_file = path.join(GEOTEXT_HOME, 'results-' + DATASETS[DATASET_NUMBER - 1] + '-' + partitionMethod + '-' + str(BUCKET_SIZE) + '.pkl')
         t_preds, d_preds, t_users, d_users, t_probs, d_probs = None, None, None, None, None, None
-        logging.info( "reading the text learner results from " + result_dump_file)
+        logging.info("reading the text learner results from " + result_dump_file)
         with open(result_dump_file, 'rb') as inf:
             t_preds, d_preds, t_users, d_users, t_probs, d_probs = pickle.load(inf)
 
@@ -1187,7 +1186,7 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
             loss(t_preds, t_users)
               
     id_user_file = path.join(GEOTEXT_HOME, 'id_user_' + partitionMethod + '_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str)
-    logging.info( "writing id_user in " + id_user_file)
+    logging.info("writing id_user in " + id_user_file)
     with codecs.open(id_user_file, 'w', 'ascii') as outf:
         for i in range(0, len(U_train)):
             outf.write(str(i) + '\t' + U_train[i] + '\n')
@@ -1199,22 +1198,15 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
                 outf.write(str(i + len(U_train)) + '\t' + U_test[i] + '\n')
 
     seed_file = path.join(GEOTEXT_HOME, 'seeds_' + partitionMethod + '_' + str(BUCKET_SIZE) + devStr + text_str + weighted_str)
-    logging.info( "writing seeds in " + seed_file)
+    logging.info("writing seeds in " + seed_file)
     with codecs.open(seed_file, 'w', 'ascii') as outf:
         for i in range(0, len(U_train)):
-            if MULTI_LABEL:
-                user = U_train[i]
-                multi_labels = user_multi_labels[user]
-                for label, p in multi_labels.iteritems():
-                    if p != 0.0:
-                        outf.write(str(i) + '\t' + str(label) + '\t' + str(p) + '\n')
-            else:
-                outf.write(str(i) + '\t' + str(Y_train[i]) + '\t' + '1.0' + '\n')
+            outf.write(str(i) + '\t' + str(Y_train[i]) + '\t' + '1.0' + '\n')
 
         if text_prior == 'dongle':
             for i in range(0, len(dongle_nodes)):
-                #w = np.max(dongle_probs[i])
-                w=1
+                # w = np.max(dongle_probs[i])
+                w = 1
                 outf.write(str(i + len(U_train)) + '.T' + '\t' + str(dongle_preds[i]) + '\t' + str(w) + '\n')
         elif text_prior == 'direct':
             w = np.max(dongle_probs[i])
@@ -1251,18 +1243,18 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
     
     
     U_all = U_train + u_unknown 
-    logging.info( "The number of test users found in train users is " + str(doubles))
-    logging.info( "Double users: " + str(double_nodes))
+    logging.info("The number of test users found in train users is " + str(doubles))
+    logging.info("Double users: " + str(double_nodes))
     vocab_cnt = len(U_all)
     idx = range(vocab_cnt)
     node_id = dict(zip(U_all, idx))
     idx = list(idx)
     mention_graph.add_nodes_from(idx)
-    #for node, id in node_id.iteritems():
+    # for node, id in node_id.iteritems():
     #    node_lower_id[node.lower()] = id
     assert (len(node_id) == len(U_train) + len(u_unknown)), 'number of unique users is not eq u_train + u_test'
-    logging.info( "the number of nodes is " + str(vocab_cnt))
-    logging.info( "Adding the direct relationships...")
+    logging.info("the number of nodes is " + str(vocab_cnt))
+    logging.info("Adding the direct relationships...")
     print "building the direct graph"
     token_pattern1 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
     token_pattern1 = re.compile(token_pattern1)
@@ -1285,10 +1277,10 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
                 freq = 1
             if mention_graph.has_edge(user_id, mention):
                 mention_graph[user_id][mention]['weight'] += freq
-                #mention_graph[mention][user]['weight'] += freq/2.0
+                # mention_graph[mention][user]['weight'] += freq/2.0
             else:
                 mention_graph.add_edge(user_id, mention, weight=freq)
-                #mention_graph.add_edge(mention, user, weight=freq/2.0)   
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)   
        
     print "adding the test graph"
     for user, text in u_text_unknown.iteritems():
@@ -1302,10 +1294,10 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
                 freq = 1
             if mention_graph.has_edge(user_id, mention):
                 mention_graph[user_id][mention]['weight'] += freq
-                #mention_graph[mention][user]['weight'] += freq/2.0
+                # mention_graph[mention][user]['weight'] += freq/2.0
             else:
                 mention_graph.add_edge(user_id, mention, weight=freq)
-                #mention_graph.add_edge(mention, user, weight=freq/2.0)  
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)  
     
     
     celebrities = []
@@ -1323,17 +1315,17 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
     
     project_to_main_users = True
     if project_to_main_users:
-        #mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
+        # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
         mention_graph = collaboration_weighted_projected_graph(mention_graph, idx, weight_str=None, degree_power=1, caller='mad')
-        #mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
-        #mention_graph = bipartite.projected_graph(mention_graph, main_users)
+        # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
+        # mention_graph = bipartite.projected_graph(mention_graph, main_users)
     connected_nodes = set()
     l = mention_graph.number_of_edges()
-    logging.info( "The number of edges is " + str(l))
+    logging.info("The number of edges is " + str(l))
     tenpercent = l / 10
     input_graph_file = path.join(GEOTEXT_HOME, 'input_graph_' + partitionMethod + '_' + str(BUCKET_SIZE) + '_' + celebrityStr + devStr + text_str + weighted_str + postfix)
     logging.info("writing the input_graph in " + input_graph_file)
-    with codecs.open(input_graph_file, 'w', 'ascii', buffering= pow(2,6) * pow(2, 20)) as outf:
+    with codecs.open(input_graph_file, 'w', 'ascii', buffering=pow(2, 6) * pow(2, 20)) as outf:
         i = 1
         for edge in mention_graph.edges_iter(nbunch=None, data=True):
             u, v , data = edge
@@ -1343,7 +1335,7 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
             if not DIRECT_GRAPH_WEIGHTED:
                 w = 1.0
             if i % tenpercent == 0:
-                logging.info( "processing " + str(10 * i / tenpercent) + "%")
+                logging.info("processing " + str(10 * i / tenpercent) + "%")
             i += 1
             outf.write(str(u) + '\t' + str(v) + '\t' + str(w) + '\n')
         if text_prior == 'dongle':
@@ -1361,7 +1353,7 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
     logging.info("the number of disconnected test users is " + str(len(u_unknown) - len([a for a in us if a >= len(U_train)])))
     output_file = path.join(GEOTEXT_HOME, 'label_prop_output_' + DATASETS[DATASET_NUMBER - 1] + '_' + partitionMethod + '_' + str(BUCKET_SIZE) + '_' + str(celeb_threshold) + devStr + text_str + weighted_str)
     logging.info("output file: " + output_file)
-    #logging.info(str(disconnected_us))
+    # logging.info(str(disconnected_us))
     
 
 
@@ -1476,7 +1468,7 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
     dongle = False
     backoff = False
     text_direct = False
-    if prior!='none':
+    if prior != 'none':
         if prior == 'backoff':
             backoff = True
         elif prior == 'prior':
@@ -1492,7 +1484,7 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
                     preds = devPreds
                     U_test = U_dev
                     testProbs = devProbs
-                test_confidences = testProbs[np.arange(0, preds.shape[0]),preds]
+                test_confidences = testProbs[np.arange(0, preds.shape[0]), preds]
                 loss(preds=preds, U_test=U_test)
                 if dongle:
                     mention_graph.add_nodes_from([u + '.dongle' for u in U_test])
@@ -1560,14 +1552,14 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
     if remove_mentions_with_degree_one:
         mention_nodes = set(mention_graph.nodes()) - set(node_id.values())
         mention_degree = mention_graph.degree(nbunch=mention_nodes, weight=None)
-        one_degree_non_target = [node for node, degree in mention_degree.iteritems() if degree<2]
+        one_degree_non_target = [node for node, degree in mention_degree.iteritems() if degree < 2]
         logging.info('found ' + str(len(one_degree_non_target)) + ' mentions with degree 1 in the graph.')
         for node in one_degree_non_target:
             mention_graph.remove_node(node)
     print "finding unlocated nodes"
     if node_order:
         node_degree = mention_graph.degree()
-        #sort node_degree by value
+        # sort node_degree by value
         if node_order == 'h2l':
             reverse_order = True
         else:
@@ -1575,32 +1567,32 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
         nodes = sorted(node_degree, key=node_degree.get, reverse=reverse_order)
         if node_order == 'random':
             random.shuffle(nodes)
-        #nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
+        # nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
         nodes_unknown = [node for node in nodes if node not in trainUsersLower and node not in dongle_nodes]
     else:
         nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
 
-    #find the cycles with 3 nodes and increase their edge weight
+    # find the cycles with 3 nodes and increase their edge weight
     increase_cyclic_edge_weights = False
     if increase_cyclic_edge_weights:
         increase_coefficient = 2
-        cycls_3 = [c for c in list(nx.find_cliques(mention_graph)) if len(c)>2]
+        cycls_3 = [c for c in list(nx.find_cliques(mention_graph)) if len(c) > 2]
         print(str(len(cycls_3)) + ' triangles in the graph.')
-        #cycls_3 = [c for c in nx.cycle_basis(mention_graph) if len(c)==3]
+        # cycls_3 = [c for c in nx.cycle_basis(mention_graph) if len(c)==3]
         for c_3 in cycls_3:
             mention_graph[c_3[0]][c_3[1]]['weight'] *= increase_coefficient
             mention_graph[c_3[0]][c_3[2]]['weight'] *= increase_coefficient
             mention_graph[c_3[1]][c_3[2]]['weight'] *= increase_coefficient
         del cycls_3
     
-    #remove (or decrease the weights of) the edges between training nodes which are very far from each other
+    # remove (or decrease the weights of) the edges between training nodes which are very far from each other
     remove_inconsistent_edges = False
     if remove_inconsistent_edges:
         max_acceptable_distance = 161
         num_nodes_removed = 0
         edges = mention_graph.edges()
-        edges = [(a,b) for a,b in edges if a in node_location and b in node_location]
-        for node1,latlon1 in node_location.iteritems():
+        edges = [(a, b) for a, b in edges if a in node_location and b in node_location]
+        for node1, latlon1 in node_location.iteritems():
             for node2, latlon2 in node_location.iteritems():
                 lat1, lon1 = latlon1
                 lat2, lon2 = latlon2
@@ -1660,7 +1652,7 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
                     if normalize_edge and weighted:
                         edge_weight_normalized = float(edge_weight) / (mention_graph.degree(nbr) * mention_graph.degree(node))
                         nbr_edge_weights.append(edge_weight_normalized)
-                    #elif not weighted:
+                    # elif not weighted:
                     #    nbr_edge_weights.append(1)
                     else:
                         nbr_edge_weights.append(edge_weight)
@@ -1764,10 +1756,10 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                 freq = 1
             if mention_graph.has_edge(user_id, mention):
                 mention_graph[user_id][mention]['weight'] += freq
-                #mention_graph[mention][user]['weight'] += freq/2.0
+                # mention_graph[mention][user]['weight'] += freq/2.0
             else:
                 mention_graph.add_edge(user_id, mention, weight=freq)
-                #mention_graph.add_edge(mention, user, weight=freq/2.0)   
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)   
        
     print "adding the test graph"
     for user, text in evalText.iteritems():
@@ -1781,10 +1773,10 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                 freq = 1
             if mention_graph.has_edge(user_id, mention):
                 mention_graph[user_id][mention]['weight'] += freq
-                #mention_graph[mention][user]['weight'] += freq/2.0
+                # mention_graph[mention][user]['weight'] += freq/2.0
             else:
                 mention_graph.add_edge(user_id, mention, weight=freq)
-                #mention_graph.add_edge(mention, user, weight=freq/2.0)  
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)  
         
     
     trainuserid_location = {}
@@ -1828,7 +1820,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
     dongle = False
     backoff = False
     text_direct = False
-    if prior!='none':
+    if prior != 'none':
         if prior == 'backoff':
             backoff = True
         elif prior == 'prior':
@@ -1844,7 +1836,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                     preds = devPreds
                     U_test = U_dev
                     testProbs = devProbs
-                test_confidences = testProbs[np.arange(0, preds.shape[0]),preds]
+                test_confidences = testProbs[np.arange(0, preds.shape[0]), preds]
                 loss(preds=preds, U_test=U_test)
                 if dongle:
                     mention_graph.add_nodes_from([u + '.dongle' for u in U_test])
@@ -1873,7 +1865,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
     if remove_mentions_with_degree_one:
         mention_nodes = set(mention_graph.nodes()) - set(node_id.values())
         mention_degree = mention_graph.degree(nbunch=mention_nodes, weight=None)
-        one_degree_non_target = {node for node, degree in mention_degree.iteritems() if degree<2}
+        one_degree_non_target = {node for node, degree in mention_degree.iteritems() if degree < 2}
         logging.info('found ' + str(len(one_degree_non_target)) + ' mentions with degree 1 in the graph.')
         for node in one_degree_non_target:
             mention_graph.remove_node(node)
@@ -1881,14 +1873,14 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
     if project_to_main_users:
         logging.info('projecting the graph into the target user.')
         main_users = node_id.values()
-        #mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
+        # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
         mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
-        #mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
-        #mention_graph = bipartite.projected_graph(mention_graph, main_users)
+        # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
+        # mention_graph = bipartite.projected_graph(mention_graph, main_users)
     logging.info("Edge number: " + str(mention_graph.number_of_edges()))
     logging.info("Node number: " + str(mention_graph.number_of_nodes()))
-    #results[str(project_to_main_users)] = mention_graph.degree().values()
-    #return
+    # results[str(project_to_main_users)] = mention_graph.degree().values()
+    # return
     remove_betweeners = False
     if remove_betweeners:
         print("computing betweenness centrality of all nodes, takes a long time, sorry!")
@@ -1903,9 +1895,9 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
     
         
     
-    #check the effect of geolocation order on performance. The intuition is that
-    #if the high confident nodes are geolocated first it may be better because noisy
-    #predictions won't propagate from the first iterations.
+    # check the effect of geolocation order on performance. The intuition is that
+    # if the high confident nodes are geolocated first it may be better because noisy
+    # predictions won't propagate from the first iterations.
     if node_order:
         node_degree = mention_graph.degree()
         if node_order == 'h2l':
@@ -1915,31 +1907,31 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
         nodes = sorted(node_degree, key=node_degree.get, reverse=reverse_order)
         if node_order == 'random':
             random.shuffle(nodes)
-        #nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
+        # nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
         nodes_unknown = [node for node in nodes if node not in trainuserid_location and node not in dongle_nodes]
     else:
         nodes_unknown = [node for node in mention_graph.nodes() if node not in trainuserid_location and node not in dongle_nodes]
-    #find the cycles with 3 nodes and increase their edge weight
+    # find the cycles with 3 nodes and increase their edge weight
     increase_cyclic_edge_weights = False
     if increase_cyclic_edge_weights:
         increase_coefficient = 2
-        cycls_3 = [c for c in list(nx.find_cliques(mention_graph)) if len(c)>2]
+        cycls_3 = [c for c in list(nx.find_cliques(mention_graph)) if len(c) > 2]
         print(str(len(cycls_3)) + ' triangles in the graph.')
-        #cycls_3 = [c for c in nx.cycle_basis(mention_graph) if len(c)==3]
+        # cycls_3 = [c for c in nx.cycle_basis(mention_graph) if len(c)==3]
         for c_3 in cycls_3:
             mention_graph[c_3[0]][c_3[1]]['weight'] *= increase_coefficient
             mention_graph[c_3[0]][c_3[2]]['weight'] *= increase_coefficient
             mention_graph[c_3[1]][c_3[2]]['weight'] *= increase_coefficient
         del cycls_3
     
-    #remove (or decrease the weights of) the edges between training nodes which are very far from each other
+    # remove (or decrease the weights of) the edges between training nodes which are very far from each other
     remove_inconsistent_edges = False
     if remove_inconsistent_edges:
         max_acceptable_distance = 161
         num_nodes_removed = 0
         edges = mention_graph.edges()
-        edges = [(a,b) for a,b in edges if a in node_location and b in node_location]
-        for node1,latlon1 in node_location.iteritems():
+        edges = [(a, b) for a, b in edges if a in node_location and b in node_location]
+        for node1, latlon1 in node_location.iteritems():
             for node2, latlon2 in node_location.iteritems():
                 lat1, lon1 = latlon1
                 lat2, lon2 = latlon2
@@ -1960,7 +1952,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
     
     
     converged = False
-    logging.info( "weighted " + str(weighted))
+    logging.info("weighted " + str(weighted))
     max_iter = 5
     iter_num = 1
     logging.info("iterating with max_iter = " + str(max_iter))
@@ -1972,7 +1964,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
         isolated_users = set()
         print "iter: " + str(iter_num)
         located_nodes_count = len(node_location)
-        logging.info( str(located_nodes_count) + " nodes have location")
+        logging.info(str(located_nodes_count) + " nodes have location")
         for node in nodes_unknown:
             nbrs = mention_graph[node]
             nbrlats = []
@@ -1994,7 +1986,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                     if normalize_edge and weighted:
                         edge_weight_normalized = float(edge_weight) / (mention_graph.degree(nbr) * mention_graph.degree(node))
                         nbr_edge_weights.append(edge_weight_normalized)
-                    #elif not weighted:
+                    # elif not weighted:
                     #    nbr_edge_weights.append(1)
                     else:
                         nbr_edge_weights.append(edge_weight)
@@ -2017,7 +2009,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
             converged = True
         
         if len(node_location) == located_nodes_count:
-            logging.info( "converged. No new nodes added in this iteration.")
+            logging.info("converged. No new nodes added in this iteration.")
             # converged = True
         distances = []
         isolated = 0
@@ -2036,10 +2028,10 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
         current_median = np.median(distances)
         current_mean = np.mean(distances)
         current_acc = 100 * len([d for d in distances if d < 161]) / float(len(distances))
-        logging.info( "mean: " + str(int(current_mean)))
-        logging.info( "median:" + str(int(current_median)))
-        logging.info( "Acc@161:" + str(current_acc))
-        logging.info( "isolated test users are " + str(isolated) + " out of " + str(len(distances)))
+        logging.info("mean: " + str(int(current_mean)))
+        logging.info("median:" + str(int(current_median)))
+        logging.info("Acc@161:" + str(current_acc))
+        logging.info("isolated test users are " + str(isolated) + " out of " + str(len(distances)))
         
         compute_degree_error = False
         if compute_degree_error:
@@ -2116,10 +2108,10 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
                 freq = 1
             if mention_graph.has_edge(user_id, mention):
                 mention_graph[user_id][mention]['weight'] += freq
-                #mention_graph[mention][user]['weight'] += freq/2.0
+                # mention_graph[mention][user]['weight'] += freq/2.0
             else:
                 mention_graph.add_edge(user_id, mention, weight=freq)
-                #mention_graph.add_edge(mention, user, weight=freq/2.0)   
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)   
        
     print "adding the test graph"
     for user, text in evalText.iteritems():
@@ -2133,10 +2125,10 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
                 freq = 1
             if mention_graph.has_edge(user_id, mention):
                 mention_graph[user_id][mention]['weight'] += freq
-                #mention_graph[mention][user]['weight'] += freq/2.0
+                # mention_graph[mention][user]['weight'] += freq/2.0
             else:
                 mention_graph.add_edge(user_id, mention, weight=freq)
-                #mention_graph.add_edge(mention, user, weight=freq/2.0)  
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)  
         
     
     trainuserid_location = {}
@@ -2185,7 +2177,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
     if remove_mentions_with_degree_one:
         mention_nodes = set(mention_graph.nodes()) - set(node_id.values())
         mention_degree = mention_graph.degree(nbunch=mention_nodes, weight=None)
-        one_degree_non_target = {node for node, degree in mention_degree.iteritems() if degree<2}
+        one_degree_non_target = {node for node, degree in mention_degree.iteritems() if degree < 2}
         logging.info('found ' + str(len(one_degree_non_target)) + ' mentions with degree 1 in the graph.')
         for node in one_degree_non_target:
             mention_graph.remove_node(node)
@@ -2193,10 +2185,10 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
     if project_to_main_users:
         logging.info('projecting the graph into the target user.')
         main_users = node_id.values()
-        #mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
+        # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
         mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
-        #mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
-        #mention_graph = bipartite.projected_graph(mention_graph, main_users)
+        # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
+        # mention_graph = bipartite.projected_graph(mention_graph, main_users)
     logging.info("Edge number: " + str(mention_graph.number_of_edges()))
     logging.info("Node number: " + str(mention_graph.number_of_nodes()))
 
@@ -2211,9 +2203,9 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
             node_labeldist[id] = dist
         
     
-    #check the effect of geolocation order on performance. The intuition is that
-    #if the high confident nodes are geolocated first it may be better because noisy
-    #predictions won't propagate from the first iterations.
+    # check the effect of geolocation order on performance. The intuition is that
+    # if the high confident nodes are geolocated first it may be better because noisy
+    # predictions won't propagate from the first iterations.
     if node_order:
         node_degree = mention_graph.degree()
         if node_order == 'h2l':
@@ -2223,13 +2215,13 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
         nodes = sorted(node_degree, key=node_degree.get, reverse=reverse_order)
         if node_order == 'random':
             random.shuffle(nodes)
-        #nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
+        # nodes_unknown = [node for node in mention_graph.nodes() if node not in trainUsersLower and node not in dongle_nodes]
         nodes_unknown = [node for node in nodes if node not in trainuserid_location and node not in dongle_nodes]
     else:
         nodes_unknown = [node for node in mention_graph.nodes() if node not in trainuserid_location and node not in dongle_nodes]
 
     converged = False
-    logging.info( "weighted " + str(weighted))
+    logging.info("weighted " + str(weighted))
     max_iter = 5
     iter_num = 1
     logging.info("iterating with max_iter = " + str(max_iter))
@@ -2239,7 +2231,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
         isolated_users = set()
         print "iter: " + str(iter_num)
         located_nodes_count = len(node_labeldist)
-        logging.info( str(located_nodes_count) + " nodes have location")
+        logging.info(str(located_nodes_count) + " nodes have location")
         for node in nodes_unknown:
             should_be_updated = False
             neighbors_labeldist = lil_matrix((1, len(categories)))
@@ -2253,7 +2245,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
             if should_be_updated:
                 old_labeldist = node_labeldist.get(node, csr_matrix((1, len(categories))))
                 new_labeldist = old_labeldist + neighbors_labeldist
-                #inplace normalization
+                # inplace normalization
                 normalize(new_labeldist, norm='l1', copy=False)
                 node_labeldist[node] = new_labeldist
         eval_predictions = []
@@ -2276,7 +2268,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
             converged = True
         
         if len(node_labeldist) == located_nodes_count:
-            logging.info( "converged. No new nodes added in this iteration.")
+            logging.info("converged. No new nodes added in this iteration.")
             # converged = True
         
     
@@ -2357,30 +2349,30 @@ def collaboration_weighted_projected_graph(B, nodes, weight_str=None, degree_pow
     if B.is_multigraph():
         raise nx.NetworkXError("not defined for multigraphs")
     if B.is_directed():
-        pred=B.pred
-        G=nx.DiGraph()
+        pred = B.pred
+        G = nx.DiGraph()
     else:
-        pred=B.adj
-        G=nx.Graph()
+        pred = B.adj
+        G = nx.Graph()
     G.graph.update(B.graph)
-    G.add_nodes_from((n,B.node[n]) for n in nodes)
+    G.add_nodes_from((n, B.node[n]) for n in nodes)
     direct_edge_counter = 0
     for v1, v2 in B.edges_iter(data=False):
-        if type(v1)==int and type(v2)==int:
-            w = (1.0 / len(B[v1])  + 1.0/len(B[v2]))
-            G.add_edge(v1, v2,  weight=w) 
+        if type(v1) == int and type(v2) == int:
+            w = (1.0 / len(B[v1]) + 1.0 / len(B[v2]))
+            G.add_edge(v1, v2, weight=w) 
             direct_edge_counter += 1
     logging.info('direct edge count: ' + str(direct_edge_counter))
     i = 0
     tenpercent = len(nodes) / 10
     for n1 in nodes:
         if i % tenpercent == 0:
-            logging.info( str(10 * i / tenpercent) + "%")
+            logging.info(str(10 * i / tenpercent) + "%")
         i += 1  
         unbrs = set(B[n1])
         nbrs2 = set((n for nbr in unbrs for n in B[nbr])) - set([n1])
-        nbrs2 = [n for n in nbrs2 if type(n)==int]
-            #pass
+        nbrs2 = [n for n in nbrs2 if type(n) == int]
+            # pass
         for n2 in nbrs2:
             weight = 0
             if G.has_edge(n1, n2):
@@ -2390,11 +2382,11 @@ def collaboration_weighted_projected_graph(B, nodes, weight_str=None, degree_pow
             del vnbrs
 
             if weight_str is not None:
-                weight += sum([1.0 * B[n1][n][weight_str] * B[n2][n][weight_str] /((len(B[n]) - 1) ** degree_power) for n in common if len(B[n])>1])
+                weight += sum([1.0 * B[n1][n][weight_str] * B[n2][n][weight_str] / ((len(B[n]) - 1) ** degree_power) for n in common if len(B[n]) > 1])
             else:
-                    weight += sum([1.0 /((len(B[n]) - 1) ** degree_power) for n in common if len(B[n])>1])
+                    weight += sum([1.0 / ((len(B[n]) - 1) ** degree_power) for n in common if len(B[n]) > 1])
             if weight != 0:
-                G.add_edge(n1,n2,weight=weight)
+                G.add_edge(n1, n2, weight=weight)
     
     
     return G
@@ -2422,7 +2414,7 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
         devStr = ''
     result_dump_file = path.join(GEOTEXT_HOME, 'results-' + DATASETS[DATASET_NUMBER - 1] + '-' + method + '-' + str(BUCKET_SIZE) + '.pkl')
     if text_prior != 'none':
-        logging.info( "reading (preds, devPreds, U_test, U_dev, testProbs, devProbs) from " + result_dump_file)
+        logging.info("reading (preds, devPreds, U_test, U_dev, testProbs, devProbs) from " + result_dump_file)
         with open(result_dump_file, 'rb') as inf:
             preds_text, devPreds_text, U_test_text, U_dev_text, testProbs_text, devProbs_text = pickle.load(inf)
             logging.info("text test results:")
@@ -2464,8 +2456,8 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
 
     for junto_output_file in files:   
         id_name_file = path.join(GEOTEXT_HOME, 'id_user' + '_' + method + '_' + str(BUCKET_SIZE) + devStr + textStr + weightedStr) 
-        logging.info( "output file: " + junto_output_file)
-        logging.info( "id_name file: " + id_name_file)
+        logging.info("output file: " + junto_output_file)
+        logging.info("id_name file: " + id_name_file)
         name_id = {}
         id_pred = {}
         name_pred = {}
@@ -2515,7 +2507,7 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
                             label = label_scores.split()[0]
                             labelProb = float16(label_scores.split()[1])
                             if label == '__DUMMY__':
-                                #pass
+                                # pass
                                 logging.info('choosing second ranked label as the first one is a dummy!')
                                 label = label_scores.split()[2]
                                 labelProb = float16(label_scores.split()[2])
@@ -2530,7 +2522,7 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
                                 text_predition = str(text_preds[user_index])
                                 label = text_predition
                             else:
-                                #label = str(len(categories) / 2)
+                                # label = str(len(categories) / 2)
                                 label = str(classIndx)
                                 
                         id_pred[fields[0]] = label
@@ -2564,7 +2556,7 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
                             text_predition = str(text_preds[int(uid) - len(trainUsersLower)])
                             pred = text_predition
                         else:
-                            #pred = str(len(categories) / 2)  
+                            # pred = str(len(categories) / 2)  
                             pred = classIndx
                         name_pred[u] = pred
 
@@ -2590,15 +2582,15 @@ def weighted_median(values, weights):
     sorted values = [0, 1, 3] and corresponding sorted weights = [0.6, 0.1, 0.3] the 0.5 point on
     weight corresponds to the first item which is 0. so the weighted median is 0.'''
     
-    #convert the weights into probabilities
+    # convert the weights into probabilities
     sum_weights = sum(weights)
-    weights = np.array([(w*1.0)/sum_weights for w in weights])
-    #sort values and weights based on values
+    weights = np.array([(w * 1.0) / sum_weights for w in weights])
+    # sort values and weights based on values
     values = np.array(values)
     sorted_indices = np.argsort(values)
-    values_sorted  = values[sorted_indices]
+    values_sorted = values[sorted_indices]
     weights_sorted = weights[sorted_indices]
-    #select the median point
+    # select the median point
     it = np.nditer(weights_sorted, flags=['f_index'])
     accumulative_probability = 0
     median_index = -1
@@ -2618,12 +2610,12 @@ def weighted_median(values, weights):
 
 
 initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=False)
-#t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
+# t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
 LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
 LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
 LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
 
 
 
-#junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)
+# junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)
 
