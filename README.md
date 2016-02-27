@@ -4,7 +4,7 @@ Afshin Rahimi, arahimi@student.unimelb.edu.au
 
 This tool implements the geolocation models described in the following two papers:
 
-'''
+```
 @InProceedings{rahimi2015exploiting,
 author="Rahimi, Afshin and Vu, Duy and Cohn, Trevor and Baldwin, Timothy",
 title="Exploiting Text and Network Context for Geolocation of Social Media Users",
@@ -15,9 +15,9 @@ pages="1362--1367",
 location="Denver, Colorado",
 url="http://aclweb.org/anthology/N15-1153"
 }
-'''
+```
 
-'''
+```
 @InProceedings{rahimi2015twitter,
 author="Rahimi, Afshin and Cohn, Trevor and Baldwin, Timothy",
 title="Twitter User Geolocation Using a Unified Text and Network Prediction Model",
@@ -28,7 +28,7 @@ pages="630--636",
 location="Beijing, China",
 url="http://aclweb.org/anthology/P15-2104"
 }
-'''
+```
 
 ##Models
 The models include text-based classification, network-based label propagation (regression)
