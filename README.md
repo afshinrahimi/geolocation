@@ -1,4 +1,4 @@
-#Geolocation of social media users based on text and network information
+#Geolocation of Social Media Users Using Text and Network Information
 Afshin Rahimi, arahimi@student.unimelb.edu.au
 
 

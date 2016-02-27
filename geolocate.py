@@ -1050,7 +1050,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     
     
     
-    logging.info("adding the test graph")
+    logging.info("adding the eval graph")
     for user, text in u_text_unknown.iteritems():
         user_id = node_id[user]
         mentions = [u.lower() for u in token_pattern1.findall(text)]
@@ -1282,7 +1282,7 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
                 mention_graph.add_edge(user_id, mention, weight=freq)
                 # mention_graph.add_edge(mention, user, weight=freq/2.0)   
        
-    print "adding the test graph"
+    print "adding the eval graph"
     for user, text in u_text_unknown.iteritems():
         user_id = node_id[user]
         mentions = [node_id.get(u.lower(), u.lower()) for u in token_pattern1.findall(text)]
@@ -1441,7 +1441,7 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
             else:
                 mention_graph.add_edge(user, mention, weight=freq)   
         
-    print "adding the test graph"
+    print "adding the eval graph"
     for user, text in evalText.iteritems():
         mentions = [u.lower() for u in token_pattern1.findall(text)]
         mentions = [m for m in mentions if m != user]
@@ -1761,7 +1761,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                 mention_graph.add_edge(user_id, mention, weight=freq)
                 # mention_graph.add_edge(mention, user, weight=freq/2.0)   
        
-    print "adding the test graph"
+    print "adding the eval graph"
     for user, text in evalText.iteritems():
         user_id = node_id[user]
         mentions = [node_id.get(u.lower(), u.lower()) for u in token_pattern1.findall(text)]
@@ -2113,7 +2113,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
                 mention_graph.add_edge(user_id, mention, weight=freq)
                 # mention_graph.add_edge(mention, user, weight=freq/2.0)   
        
-    print "adding the test graph"
+    print "adding the eval graph"
     for user, text in evalText.iteritems():
         user_id = node_id[user]
         mentions = [node_id.get(u.lower(), u.lower()) for u in token_pattern1.findall(text)]
@@ -2610,10 +2610,14 @@ def weighted_median(values, weights):
 
 
 initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=False)
-# t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
-LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
-LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
-LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
+if 'text-classification' in models_to_run:
+    t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
+if 'network-lp-regression-collapsed' in models_to_run:
+    LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+if 'network-lp-regression' in models_to_run:
+    LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
+if 'network-lp-classification' in models_to_run:
+    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
 
 
 
