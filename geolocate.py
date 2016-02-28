@@ -2604,13 +2604,13 @@ def weighted_median(values, weights):
 
 
 initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=False)
-if 'text-classification' in models_to_run:
+if 'text_classification' in models_to_run:
     t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
-if 'network-lp-regression-collapsed' in models_to_run:
+if 'network_lp_regression_collapsed' in models_to_run:
     LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
 if 'network-lp-regression' in models_to_run:
     LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
-if 'network-lp-classification' in models_to_run:
+if 'network_lp_classification' in models_to_run:
     LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
 
 
