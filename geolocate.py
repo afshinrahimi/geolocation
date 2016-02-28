@@ -2512,7 +2512,7 @@ if 'network_lp_regression_collapsed' in models_to_run:
 if 'network_lp_regression' in models_to_run:
     LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
 if 'network_lp_classification' in models_to_run:
-    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='h2l', remove_mentions_with_degree_one=True)
 
 
 
