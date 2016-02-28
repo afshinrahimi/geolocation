@@ -5,7 +5,7 @@ Created on 26 Feb 2016
 '''
 from os import path
 all_models = ['text_classification', 'network_lp_regression', 'network_lp_regression_collpased', 'network_lp_classification']
-models_to_run = ['text_classification']
+models_to_run = ['network_lp_regression_collpased']
 DATASET_NUMBER = 1
 TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
