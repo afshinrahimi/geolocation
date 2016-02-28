@@ -2502,12 +2502,9 @@ def weighted_median(values, weights):
 
     return values_sorted[median_index]
 
-if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run:
-    regression = True
-else:
-    regression = False
 
-initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=regression)
+
+initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=do_not_discretize)
 if 'text_classification' in models_to_run:
     t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
 if 'network_lp_regression_collapsed' in models_to_run:
