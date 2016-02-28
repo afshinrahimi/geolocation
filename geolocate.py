@@ -2521,3 +2521,7 @@ if 'network_lp_classification' in models_to_run:
 
 # junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)
 
+print str(datetime.now())
+script_end_time = time.time()
+script_execution_hour = (script_end_time - script_start_time) / 3600.0
+print "The script execution time (in hours) is " + str(script_execution_hour)
