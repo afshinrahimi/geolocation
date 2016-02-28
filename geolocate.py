@@ -1946,6 +1946,8 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
     are updated to the mean of their neighbours.
     If project_to_main_users is True the network will be collapsed (keeping just training and test/dev users) and
     if False, the complete @-mention graph will be used.
+    Note: The results reported in the paper are not based on this function. They are based on label propagation
+    using Modified Adsorption using Junto implementation (https://github.com/parthatalukdar/junto).
     '''
     U_train = [u for u in sorted(trainUsers)]
     U_test = [u for u in sorted(testUsers)]
