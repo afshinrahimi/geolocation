@@ -630,9 +630,11 @@ def initialize(partitionMethod, granularity, write=False, readText=True, reload_
 
     if not regression:
         create_directories(granularity, partitionMethod, write)  
-        print('writing init info in %s' % (reload_file))
-        with open(reload_file, 'wb') as outf:
-            pickle.dump((classLatMean, classLonMedian, classLatMedian, classLonMean, userLocation, categories, trainUsers, trainClasses, testUsers, testClasses, devUsers, devClasses), outf)
+        write_init_info = False
+        if write_init_info:
+            print('writing init info in %s' % (reload_file))
+            with open(reload_file, 'wb') as outf:
+                pickle.dump((classLatMean, classLonMedian, classLatMedian, classLonMean, userLocation, categories, trainUsers, trainClasses, testUsers, testClasses, devUsers, devClasses), outf)
     else:
         logging.info('Not discretising locations as regression option is on!')
     logging.info("initialization finished")
