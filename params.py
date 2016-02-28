@@ -77,3 +77,4 @@ fit_intercept = True
 norm = 'l2'
 use_idf = True
 node_orders = ['l2h', 'h2l', 'random']
+feature_names = None

@@ -537,13 +537,7 @@ def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', bi
     Y_train = np.asarray([trainClasses[u] for u in U_train])
     Y_test = np.asarray([testClasses[u] for u in U_test])
     Y_dev = np.asarray([devClasses[u] for u in U_dev])
-    
-    if novectorization:
-        X_train = None
-        X_test = None
-        X_dev = None
-        feature_names = None
-        return X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names  
+ 
     logging.info("Extracting features from the training dataset using a sparse vectorizer")
     t0 = time.time()
     

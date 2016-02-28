@@ -33,11 +33,13 @@ url="http://aclweb.org/anthology/P15-2104"
 ##Models
 The models include text-based classification, network-based label propagation (regression)
 and network-based label propagation (classification).
+To run a model add the model name from params.all_models to the params.models_to_run list.
+
 
 ##Data
 ###Clusters (regions) for classification models
 For the classification models, the real-valued coordinates of the training points are clustered using
-k-d tree and each cluster (region) is assigned a label. This implementation expects the clusters to be
+[k-d tree](https://github.com/utcompling/textgrounder/blob/master/src/main/java/ags/utils/KdTree.java) and each cluster (region) is assigned a label. This implementation expects the clusters to be
 written into a text file where training point members of each cluster are written in one line tab-separated.
 For example int the following example we have 2 clusters (regions) each with two training points:
 
