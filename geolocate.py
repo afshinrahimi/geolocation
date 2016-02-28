@@ -8,130 +8,43 @@ Created on 4 Sep 2014
 
 @author: af
 '''
-from GPy import kern, likelihoods
-import GPy
-from GPy.core.gp import GP
-from GPy.examples import regression
+from params import *
 from IPython.core.debugger import Tracer
-from _collections import defaultdict
-import cPickle
-import codecs
+from collections import defaultdict, Counter
 import codecs
 from collections import Counter
-from colorama import init, Fore, Back, Style
-import copy
-import csv
-from datetime import datetime
 from datetime import datetime
 import glob
 import gzip
-import gzip
 from haversine import haversine
-import itertools
 import logging
-from math import radians, cos, sin, asin, sqrt
-from math import radians, sin, cos, sqrt, asin
-from math import sqrt
-import math
-from matplotlib.ticker import NullFormatter
-import nltk
-from numpy import float16, float32, float64
-import numpy
-from os import path
-import os
 import os
 import pdb
 import pickle
 import random
 import re
-from scipy import linalg
 from scipy import mean
-from scipy.io import mmwrite
-from scipy.sparse import csr_matrix, coo_matrix, dok_matrix
+from scipy.sparse import csr_matrix
 from scipy.sparse.lil import lil_matrix
-from scipy.spatial import ConvexHull, convex_hull_plot_2d
-from scipy.spatial.distance import pdist
-from scipy.stats import logistic
-from scipy.stats import threshold
-import sets
-import shutil
-from sklearn import cross_validation
-from sklearn import linear_model
-from sklearn import metrics
-from sklearn import mixture, ensemble
-from  sklearn.datasets import load_files
-from sklearn.datasets import dump_svmlight_file
-from sklearn.decomposition import *
-from sklearn.decomposition import *
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.feature_extraction import stop_words
+from sklearn.decomposition import DictionaryLearning
 from sklearn.feature_extraction.text import TfidfVectorizer
-from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, strip_accents_ascii, strip_accents_unicode
-from sklearn.feature_selection import SelectKBest
-from sklearn.feature_selection import SelectKBest, chi2
-from sklearn.linear_model import PassiveAggressiveClassifier
-from sklearn.linear_model import Perceptron
-from sklearn.linear_model import RidgeClassifier
 from sklearn.linear_model import SGDClassifier
-from sklearn.linear_model.coordinate_descent import MultiTaskLasso, ElasticNet
-from sklearn.linear_model.sgd_fast import Log
-from sklearn.metrics.pairwise import euclidean_distances, pairwise_distances
-from sklearn.naive_bayes import BernoulliNB, MultinomialNB
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.neighbors import NearestCentroid
-from sklearn.neighbors import NearestNeighbors
-from sklearn.neighbors import NearestNeighbors
 from sklearn.preprocessing import normalize
-from sklearn.semi_supervised import *
-from sklearn.svm import LinearSVC, SVC
 from sklearn.utils.extmath import density
-import string
 import sys
-import sys
-import theano
-from theano.tensor.basic import dmatrix
 import time
 
-import matplotlib as mpl
-import  matplotlib.collections as collections
-import matplotlib.lines as mlines
-import matplotlib.patches as mpatches
-import matplotlib.patches as mpatches
-import matplotlib.path as mpath
-import matplotlib.pyplot as plt
-import matplotlib.ticker as ticker
+
 import networkx as nx
 import numpy as np
-import numpy as np
-from params import *
-import pylab as pb
 import scipy.sparse as sparse
-import theano.tensor as T
-import weighted as wst
-import weightedstats as ws
 
 
-mpl.use('Agg')
-# from sklearn.linear_model import LogisticRegression
-# this is just for printing colored in shell, you don't want it you comment it and its init line
-init()
 
-# from extract import get_tokens
-# from time import time
-pb.ion()
-# from GPy.models_modules.gp_regression import GPRegression
+
 __docformat__ = 'restructedtext en'
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
-# logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-# rootLogger = logging.getLogger()
 
-# fileHandler = logging.FileHandler("{0}/{1}.log".format('.', 'log.log'))
-# fileHandler.setFormatter(logFormatter)
-# rootLogger.addHandler(fileHandler)
-
-# consoleHandler = logging.StreamHandler()
-# consoleHandler.setFormatter(logFormatter)
-# rootLogger.addHandler(consoleHandler)
 
 print str(datetime.now())
 script_start_time = time.time()
@@ -172,18 +85,7 @@ def distance(lat1, lon1, lat2, lon2):
     point2 = (lat2, lon2)
     
     return haversine(point1, point2)
-    # downloaded from http://rosettacode.org/wiki/Haversine_formula#Python
-    R = 6372.8  # Earth radius in kilometers
-    dLat = radians(lat2 - lat1)
-    dLon = radians(lon2 - lon1)
-    lat1 = radians(lat1)
-    lat2 = radians(lat2)
-    
-    a = sin(dLat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dLon / 2) ** 2
-    c = 2 * asin(sqrt(a))
-    
-    return R * c
-    # return km 
+
 
 def users(file, type='train', write=False, readText=True):
     if readText:
@@ -641,13 +543,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
         non_zero_parameters = csr_matrix(clf.coef_).nnz
     else:
         non_zero_parameters = 0
-    plot_matrix = False
-    if plot_matrix and hasattr(clf, 'coef_'):
-        print('plotting the first 100 features of the weight matrix...')
-        plt.close()
-        plt.pcolormesh(clf.coef_[:, 0:100], cmap='RdBu', vmin=np.min(clf.coef_[:, 0:100]), vmax=np.max(clf.coef_[:, 0:100]))
-        plt.savefig(path.join(GEOTEXT_HOME, 'matrix.pdf'), format='pdf')
-        plt.close()
+
     report_verbose = True
     if compute_dev:
         devPreds = clf.predict(X_dev)
@@ -2499,12 +2395,12 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
                         try:
                             label_scores = fields[-3]
                             label = label_scores.split()[0]
-                            labelProb = float16(label_scores.split()[1])
+                            labelProb = float(label_scores.split()[1])
                             if label == '__DUMMY__':
                                 # pass
                                 logging.info('choosing second ranked label as the first one is a dummy!')
                                 label = label_scores.split()[2]
-                                labelProb = float16(label_scores.split()[2])
+                                labelProb = float(label_scores.split()[2])
                                 second_option_selected += 1
                         except:
                             print fields
@@ -2602,13 +2498,17 @@ def weighted_median(values, weights):
 
     return values_sorted[median_index]
 
+if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run:
+    regression = True
+else:
+    regression = False
 
-initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=False)
+initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=regression)
 if 'text_classification' in models_to_run:
     t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
 if 'network_lp_regression_collapsed' in models_to_run:
     LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
-if 'network-lp-regression' in models_to_run:
+if 'network_lp_regression' in models_to_run:
     LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
 if 'network_lp_classification' in models_to_run:
     LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
