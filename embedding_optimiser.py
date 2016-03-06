@@ -16,19 +16,20 @@ from scipy.special import expit as sigmoid
 import copy
 from scipy.sparse.csgraph._min_spanning_tree import csr_matrix
 from sklearn.preprocessing import normalize
+import pdb
+from sklearn.preprocessing import MinMaxScaler 
 
-def edgexplain_geolocate(X, training_indices, A, iterations, learning_rate=0.1, alpha=10, c=0, lambda1=0.001):
+def edgexplain_geolocate(X, training_indices, A, iterations, learning_rate=0.1, alpha=10, C=0, lambda1=0.001, text_dimensions=None):
     '''
     alpha and c are edgeexplain variables
     A is the adjacancy matrix (e.g. word-word relations)
     X is the word embeddings already available.
     X_bar is the hopefully improved word embeddings.
     '''
-    X = normalize(X, norm='l1', axis=1, copy=True)
+    #X = normalize(X, norm='l1', axis=1, copy=True)
 
     print 'initializing X_bar with X...'
     X_bar = X.copy()
-    
     print 'creating the shared variables for X, X_bar and A ...'
     tX = theano.shared(X.astype(theano.config.floatX),name="X")
     tX_bar = theano.shared(X_bar.astype(theano.config.floatX),name="X_bar")
@@ -36,14 +37,16 @@ def edgexplain_geolocate(X, training_indices, A, iterations, learning_rate=0.1, 
     
     print 'defining the cost functions and its gradient...'
     tEmbedding = T.sum((tX[training_indices]-tX_bar[training_indices])**2)
+    #tEmbedding = T.sum((tX-tX_bar)**2)
     if sp.issparse(A):
         #tEdgexplain = lambda1 * Ts.sp_sum(Ts.structured_log(Ts.structured_sigmoid(Ts.structured_add(Ts.basic.mul(tA, alpha * T.dot(tX_bar, tX_bar.transpose())), c))), sparse_grad=True)
-        tEdgexplain = T.sum(T.log(T.nnet.sigmoid(c + Ts.basic.mul(tA, alpha * T.dot(tX_bar, tX_bar.transpose())).toarray())))
+        tEdgexplain = T.sum(T.log(T.nnet.sigmoid(C + Ts.basic.mul(tA, alpha * T.dot(tX_bar, tX_bar.transpose())).toarray())))
+        #tEdgexplain = T.sum(Ts.basic.mul(tA, alpha * T.dot(tX_bar, tX_bar.transpose())).toarray())
     else:
-        tEdgexplain = T.sum(T.log(T.nnet.sigmoid(c + alpha * A * T.dot(tX_bar, tX_bar.transpose()))))
+        tEdgexplain = T.sum(T.log(T.nnet.sigmoid(C + alpha * A * T.dot(tX_bar, tX_bar.transpose()))))
     
-    tCost = (1-lambda1) * tEmbedding -  lambda1 * tEdgexplain 
-
+    tCost = (1-lambda1) * tEmbedding - lambda1 * tEdgexplain 
+    #tCost = tEdgexplain
     tGamma = T.scalar(name="learning_rate")
     # Gradient of the cost function with regards to tX_bar (the new embeddings)
     tgrad_X_bar = T.grad(cost=tCost, wrt=tX_bar) 
@@ -56,12 +59,45 @@ def edgexplain_geolocate(X, training_indices, A, iterations, learning_rate=0.1, 
     
     print 'training in ' + str(iterations) + ' iterations...'
     for i in range(0,iterations):
-        print 'iter ' + str(i) + ' divergence from original embeddings: ', np.linalg.norm(tX.get_value()-tX_bar.get_value())
+        print 'iter ' + str(i) + ' divergence from original embeddings: ', np.linalg.norm(tX.get_value()-tX_bar.get_value()), 'cost', tCost.eval()
         train_embedding(np.asarray(learning_rate,dtype=theano.config.floatX))
         #set possible inf or nan value to a large number or zero
         #tX_bar.set_value(np.nan_to_num(tX_bar.get_value()))
-        print 'normalizing new embeddings...'
-        tX_bar.set_value(normalize(tX_bar.get_value(), norm='l1', axis='1', copy=True))
+        if not text_dimensions:
+            normalize_params = False
+            if normalize_params:
+                print 'normalizing new embeddings...'
+                normalized_X_bar = np.exp(tX_bar.get_value())
+                normalized_X_bar = normalize(normalized_X_bar, norm='l1', axis=1, copy=True)
+                #X_train = X[0: training_indices.shape[0], :]
+                #X_eval = normalized_X_bar[training_indices.shape[0]:, :]
+                #final_X = np.vstack((X_train, X_eval))
+                tX_bar.set_value(normalized_X_bar)
+        else:
+            scaler = MinMaxScaler()
+            X_bar = tX_bar.get_value()
+            X_location = X_bar[:, 0: X_bar.shape[1] - text_dimensions]
+            
+            X_location_scaled = np.transpose(scaler.fit_transform(np.transpose(X_location)))
+            X_location_normalized = normalize(X_location_scaled, norm='l1', axis=1, copy=True)
+            #X_text_scaled = np.transpose(scaler.fit_transform(np.transpose(X_text)))
+            #X_text_normalized = normalize(X_text_scaled, norm='l1', axis=1, copy=True)
+            #keep the text dimensions unchanged
+            X_text = X[:,(X.shape[1] - text_dimensions):]
+            X_bar_normalized = np.hstack((X_location_normalized, X_text))
+            #keep the train samples unchanged
+            #X_train = X[0: training_indices.shape[0], :]
+            #X_eval = X_bar_normalized[training_indices.shape[0]:, :]
+            #final_X = np.vstack((X_train, X_eval))
+            tX_bar.set_value(X_bar_normalized)
+        #keep the training samples unchanged
+        #X_bar = tX_bar.get_value()
+        #X_bar[training_indices] = X[training_indices]
+        #tX_bar.set_value(X_bar)
+        #tX_bar[training_indices] = tX_copy[training_indices]
+    normalized_X_bar = np.exp(tX_bar.get_value())
+    normalized_X_bar = normalize(normalized_X_bar, norm='l1', axis=1, copy=True)
+    tX_bar.set_value(normalized_X_bar)
         
     return tX_bar.get_value()
 

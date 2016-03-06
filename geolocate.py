@@ -27,16 +27,17 @@ from scipy.sparse.lil import lil_matrix
 from sklearn.decomposition import DictionaryLearning
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import SGDClassifier
-from sklearn.preprocessing import normalize
+from sklearn.preprocessing import normalize, MinMaxScaler, StandardScaler
 from sklearn.utils.extmath import density
 import sys
 import time
-
+import scipy as sp
 import networkx as nx
 import numpy as np
 from params import *
+import utils
 import scipy.sparse as sparse
-
+import embedding_optimiser as edgexplain
 
 __docformat__ = 'restructedtext en'
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
@@ -307,7 +308,7 @@ def error(predicted_label, user):
     lon2 = classLonMedian[predicted_label]
     return distance(lat1, lon1, lat2, lon2)         
 
-def loss(preds, U_test, loss='median', save=False, save_results_bucket_size=False, results_key=None):
+def loss(preds, U_test):
     global results
     if len(preds) != len(U_test): 
         print "The number of test sample predictions is: " + str(len(preds))
@@ -347,31 +348,10 @@ def loss(preds, U_test, loss='median', save=False, save_results_bucket_size=Fals
         prediction = categories[preds[i]]
         medianlat = classLatMedian[prediction]  
         medianlon = classLonMedian[prediction]  
-        user_location[user] = (medianlat, medianlon)
-        meanlat = classLatMean[prediction] 
-        meanlon = classLonMean[prediction]
-        predictionCoordinate = 'median'
-        if predictionCoordinate == 'median':      
-            dd = distance(lat, lon, medianlat, medianlon)
-            distances.append(dd)
-            if error_heatmap:
-                num_in_region = uniformer[str(int(lat)) + ',' + str(int(lon))]
-                heatmap_lats.append(lat)
-                heatmap_lons.append(lon)
-                heatmap_values.append(dd)
-                uniformer[str(int(lat)) + ',' + str(int(lon))] = num_in_region + 1
-                class_error[user_original_class].append(dd)
-            
-        elif predictionCoordinate == 'mean':
-            distances.append(distance(lat, lon, meanlat, meanlon))
-    
-    if save:
-        print "dumping the results in preds.pkl"
-        with open(path.join(GEOTEXT_HOME, 'preds.pkl'), 'wb') as outf:
-            pickle.dump(user_location, outf) 
+        user_location[user] = (medianlat, medianlon)    
+        dd = distance(lat, lon, medianlat, medianlon)
+        distances.append(dd)
 
-    # print "Average distance from class mean is " + str(averageMeanDistance)
-    # print "Average distance from class median is " + str(averageMedianDistance)
     acc_at_161 = 100 * len([d for d in distances if d < 161]) / float(len(distances))
     print "Mean: " + str(int(np.mean(distances))) + " Median: " + str(int(np.median(distances))) + " Acc@161: " + str(int(acc_at_161))
     print
@@ -586,12 +566,12 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
 
     
     print "test results"
-    meanTest, medianTest, acc_at_161_test = loss(preds, U_test, save=True)
+    meanTest, medianTest, acc_at_161_test = loss(preds, U_test)
     meanDev = -1
     medianDev = -1
     if compute_dev:
         print "development results"
-        meanDev, medianDev, acc_at_161_dev = loss(devPreds, U_dev, save_results_bucket_size=True, results_key='lr')
+        meanDev, medianDev, acc_at_161_dev = loss(devPreds, U_dev)
     dump_preds = True
     if dump_preds:
         result_dump_file = path.join(GEOTEXT_HOME, 'results-' + DATASETS[DATASET_NUMBER - 1] + '-' + partitionMethod + '-' + str(BUCKET_SIZE) + '.pkl')
@@ -1961,7 +1941,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
         evalUsers = testUsers
         U_eval = U_test
         eval_classes = testClasses
-    save_gr = False
+
     U_all = U_train + U_eval
     assert len(U_all) == len(U_train) + len(U_eval), "duplicate user problem"
     idx = range(len(U_all))
@@ -1970,7 +1950,6 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
 
     
     mention_graph = nx.Graph()
-    graph_file_address = path.join(GEOTEXT_HOME, 'direct_graph.graphml')
     
     print('weighted=%s and prior=%s' % (weighted, prior))
 
@@ -2082,7 +2061,6 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
     logging.info("Edge number: " + str(mention_graph.number_of_edges()))
     logging.info("Node number: " + str(mention_graph.number_of_nodes()))
 
-
     node_labeldist = {}
     logging.info('initialising user label distributions...')
     for node, id in node_id.iteritems():
@@ -2152,7 +2130,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
                 isolated_users.add(u_id)
                 prediction = int(median_classIndx)
             eval_predictions.append(prediction)
-        loss(preds=eval_predictions, U_test=U_eval, save_results_bucket_size=True, results_key=('classification', project_to_main_users, node_order)) 
+        loss(preds=eval_predictions, U_test=U_eval) 
         iter_num += 1
         if iter_num == max_iter:
             converged = True
@@ -2162,8 +2140,204 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
             # converged = True
         
     
+def LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=False, project_to_main_users=False, node_order='l2h', remove_mentions_with_degree_one=True, add_text=False):
+    '''
+    This function implements label propagation using the edgexplain idea over discretized regions
+    for geolocation of social media users.
+    '''
+    U_train = [u for u in sorted(trainUsers)]
+    U_test = [u for u in sorted(testUsers)]
+    U_dev = [u for u in sorted(devUsers)]
+    num_classes = len(categories)
+    logging.info('running classification based label propagation with edgexplain') 
+    U_eval = []
+    if dev:
+        evalText = devText
+        evalUsers = devUsers
+        U_eval = U_dev
+        eval_classes = devClasses
+    else:
+        evalText = testText
+        evalUsers = testUsers
+        U_eval = U_test
+        eval_classes = testClasses
+
+    U_all = U_train + U_eval
+    assert len(U_all) == len(U_train) + len(U_eval), "duplicate user problem"
+    idx = range(len(U_all))
+    node_id = dict(zip(U_all, idx))
     
 
+    
+    mention_graph = nx.Graph()
+    
+    print('weighted=%s and prior=%s' % (weighted, prior))
+
+    print "building the direct graph"
+    token_pattern1 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))@([A-Za-z]+[A-Za-z0-9_]+)'
+    token_pattern1 = re.compile(token_pattern1)
+    token_pattern2 = '(?<=^|(?<=[^a-zA-Z0-9-_\\.]))#([A-Za-z]+[A-Za-z0-9_]+)'
+    token_pattern2 = re.compile(token_pattern2)
+    l = len(trainText)
+    tenpercent = l / 10
+    i = 1
+    # add train and test users to the graph
+    mention_graph.add_nodes_from(node_id.values())
+    for user, text in trainText.iteritems():
+        user_id = node_id[user]    
+        if i % tenpercent == 0:
+            print str(10 * i / tenpercent) + "%"
+        i += 1  
+        mentions = [node_id.get(u.lower(), u.lower()) for u in token_pattern1.findall(text)]
+        mentions = [m for m in mentions if m != user_id] 
+        mentionDic = Counter(mentions)
+        mention_graph.add_nodes_from(mentionDic.keys())
+        for mention, freq in mentionDic.iteritems():
+            if not weighted:
+                freq = 1
+            if mention_graph.has_edge(user_id, mention):
+                mention_graph[user_id][mention]['weight'] += freq
+                # mention_graph[mention][user]['weight'] += freq/2.0
+            else:
+                mention_graph.add_edge(user_id, mention, weight=freq)
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)   
+       
+    print "adding the eval graph"
+    for user, text in evalText.iteritems():
+        user_id = node_id[user]
+        mentions = [node_id.get(u.lower(), u.lower()) for u in token_pattern1.findall(text)]
+        mentions = [m for m in mentions if m != user_id]
+        mentionDic = Counter(mentions)
+        mention_graph.add_nodes_from(mentionDic.keys())
+        for mention, freq in mentionDic.iteritems():
+            if not weighted:
+                freq = 1
+            if mention_graph.has_edge(user_id, mention):
+                mention_graph[user_id][mention]['weight'] += freq
+                # mention_graph[mention][user]['weight'] += freq/2.0
+            else:
+                mention_graph.add_edge(user_id, mention, weight=freq)
+                # mention_graph.add_edge(mention, user, weight=freq/2.0)  
+        
+
+    evaluserid_location = {}
+    trainLats = []
+    trainLons = []
+
+    
+    for user, loc in trainUsers.iteritems():
+        user_id = node_id[user]
+        lat, lon = locationStr2Float(loc)
+        trainLats.append(lat)
+        trainLons.append(lon)
+
+        
+    for user, loc in evalUsers.iteritems():
+        user_id = node_id[user]
+        lat, lon = locationStr2Float(loc)
+        evaluserid_location[user_id] = (lat, lon)
+    
+    print "the number of train nodes is " + str(len(trainUsers))
+    print "the number of test nodes is " + str(len(evalUsers))
+    median_lat = np.median(trainLats)
+    median_lon = np.median(trainLons)
+    median_classIndx, dist = assignClass(median_lat, median_lon)
+    celebrity_threshold = celeb_threshold
+    celebrities = []
+    if remove_celebrities:
+        nodes = mention_graph.nodes_iter()
+        for node in nodes:
+            nbrs = mention_graph.neighbors(node)
+            if len(nbrs) > celebrity_threshold:
+                if node not in node_id.values():
+                    celebrities.append(node)
+        print("found %d celebrities with celebrity threshold %d" % (len(celebrities), celebrity_threshold))
+        for celebrity in celebrities:
+                mention_graph.remove_node(celebrity)
+    
+
+
+
+
+
+    if remove_mentions_with_degree_one:
+        mention_nodes = set(mention_graph.nodes()) - set(node_id.values())
+        mention_degree = mention_graph.degree(nbunch=mention_nodes, weight=None)
+        one_degree_non_target = {node for node, degree in mention_degree.iteritems() if degree < 2}
+        logging.info('found ' + str(len(one_degree_non_target)) + ' mentions with degree 1 in the graph.')
+        for node in one_degree_non_target:
+            mention_graph.remove_node(node)
+            
+    if project_to_main_users:
+        logging.info('projecting the graph into the target user.')
+        main_users = node_id.values()
+        # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
+        mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
+        # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
+        # mention_graph = bipartite.projected_graph(mention_graph, main_users)
+    logging.info("Edge number: " + str(mention_graph.number_of_edges()))
+    logging.info("Node number: " + str(mention_graph.number_of_nodes()))
+    #save adjacancy matrix for future use
+    non_target_nodes = sorted(list(set(mention_graph.nodes()) - set(idx)))
+    A = nx.adjacency_matrix(mention_graph, nodelist=idx + non_target_nodes, weight='weight')
+    
+
+    
+    num_nodes = mention_graph.number_of_nodes()
+    X = lil_matrix((num_nodes, len(categories)))
+    training_indices = []
+    test_indices = []
+    for u in U_train:
+        id = node_id[u]
+        label = trainClasses[u]
+        X[id, label] = 1
+        training_indices.append(id)
+    for u in U_eval:
+        id = node_id[u]
+        test_indices.append(id)
+
+    X=X.toarray()
+    if add_text:
+        do_lda = False
+        #scaler = MinMaxScaler(feature_range=(-1, 1), copy=False)
+        scaler = StandardScaler(copy=False)
+        text_dimensions = None
+        train_text = [trainText[u] for u in U_train]
+        eval_text = [evalText[u] for u in U_eval]
+        X_train, X_eval, vocab = utils.vectorize(train_text, eval_text, data_encoding, binary= not do_lda)
+        print '#features:', X_train.shape[1]
+        
+        if do_lda:
+            X_train, X_eval= utils.topicModel(X_train, X_eval, components=text_dimensions, vocab=vocab)
+            X_text = np.vstack((X_train, X_eval))
+            pairwise_similarity = np.dot(X_text, np.transpose(X_text))
+        else:
+            X_text = sparse.vstack([X_train, X_eval], format='csr')
+            pairwise_similarity = X_text.dot(X_text.transpose(copy=True))
+        C = scaler.fit_transform(pairwise_similarity.toarray())
+        np.fill_diagonal(C, 0)
+        #C = normalize(C, norm='l1', axis=1, copy=False)
+            
+    else:
+        text_dimensions = None
+        C = np.empty((num_nodes, num_nodes))
+        C.fill(0)
+        
+    training_indices = np.array(training_indices)
+    for learning_rate in [0.1]:
+        for alpha in [a ** -1 for a in range(1, 11)]:
+                for lambda1 in [0.5]:                    
+                    X_new = edgexplain.edgexplain_geolocate(X, training_indices, A, iterations=20, learning_rate=learning_rate, alpha=alpha, C=C, lambda1=lambda1, text_dimensions=text_dimensions)
+                    X_new = X_new[:, 0:len(categories)]
+                    preds = np.argmax(X_new, axis=1)
+                    train_preds = preds[training_indices]
+                    test_preds = preds[test_indices]
+                    print 'train error'
+                    loss(preds=train_preds.tolist(), U_test=U_train)
+                    print 'learning rate', learning_rate, 'alpha', alpha, 'lambda1', lambda1
+                    print 'eval error'
+                    loss(preds=test_preds.tolist(), U_test=U_eval)
+                    
 
 
 def collaboration_weighted_projected_graph(B, nodes, weight_str=None, degree_power=1, caller='lp'):
@@ -2458,7 +2632,7 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
                 print "total number of users: " + str(len(U_eval))
                 # print preds
                 # print [int(i) for i in Y_test.tolist()]    
-                mad_mean, mad_median, mad_acc = loss(preds, U_eval, save_results_bucket_size=True, results_key=None)
+                mad_mean, mad_median, mad_acc = loss(preds, U_eval)
     return mad_mean, mad_median, mad_acc
                 
                     
@@ -2508,8 +2682,9 @@ if 'network_lp_regression_collapsed' in models_to_run:
 if 'network_lp_regression' in models_to_run:
     LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
 if 'network_lp_classification' in models_to_run:
-    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
-
+    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
+if 'network_lp_classification_edgexplain' in models_to_run:
+    LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
 
 
 # junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)

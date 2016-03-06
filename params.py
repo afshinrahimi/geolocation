@@ -4,9 +4,9 @@ Created on 26 Feb 2016
 @author: af
 '''
 from os import path
-all_models = ['text_classification', 'network_lp_regression', 'network_lp_regression_collapsed', 'network_lp_classification']
-models_to_run = ['network_lp_classification']
-if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run:
+all_models = ['text_classification', 'network_lp_regression', 'network_lp_regression_collapsed', 'network_lp_classification', 'network_lp_classification_edgexplain']
+models_to_run = ['network_lp_classification_edgexplain']
+if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run and 'network_lp_classification_edgexplain' not in models_to_run:
     do_not_discretize = True
 else:
     do_not_discretize = False
@@ -16,7 +16,7 @@ TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world']
 ENCODINGS = ['latin1', 'utf-8', 'utf-8']
-buckets = [300 , 2400, 2400]
+buckets = [50 , 2400, 2400]
 reguls = [5e-5, 1e-6, 2e-7]
 celeb_thresholds = [5 , 15, 15]
 BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
