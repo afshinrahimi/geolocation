@@ -2279,6 +2279,10 @@ def LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=Fal
     logging.info("Node number: " + str(mention_graph.number_of_nodes()))
     #save adjacancy matrix for future use
     non_target_nodes = sorted(list(set(mention_graph.nodes()) - set(idx)))
+    if len(non_target_nodes) == 0:
+        non_target_node_indices = []
+    else:
+        non_target_node_indices = range(len(U_all), mention_graph.number_of_nodes())
     A = nx.adjacency_matrix(mention_graph, nodelist=idx + non_target_nodes, weight='weight')
     
 
@@ -2322,22 +2326,33 @@ def LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=Fal
         text_dimensions = None
         C = np.empty((num_nodes, num_nodes))
         C.fill(0)
-        
-    training_indices = np.array(training_indices)
-    for learning_rate in [0.1]:
-        for alpha in [a ** -1 for a in range(1, 11)]:
-                for lambda1 in [0.5]:                    
-                    X_new = edgexplain.edgexplain_geolocate(X, training_indices, A, iterations=20, learning_rate=learning_rate, alpha=alpha, C=C, lambda1=lambda1, text_dimensions=text_dimensions)
-                    X_new = X_new[:, 0:len(categories)]
-                    preds = np.argmax(X_new, axis=1)
-                    train_preds = preds[training_indices]
-                    test_preds = preds[test_indices]
-                    print 'train error'
-                    loss(preds=train_preds.tolist(), U_test=U_train)
-                    print 'learning rate', learning_rate, 'alpha', alpha, 'lambda1', lambda1
-                    print 'eval error'
-                    loss(preds=test_preds.tolist(), U_test=U_eval)
-                    
+    
+    optimise_with_sgd = False
+    if optimise_with_sgd:
+        training_indices = np.array(training_indices)
+        for learning_rate in [0.1]:
+            for alpha in [10]:
+                    for lambda1 in [0.5]:                    
+                        X_new = edgexplain.edgexplain_geolocate(X, training_indices, A, iterations=20, learning_rate=learning_rate, alpha=alpha, C=C, lambda1=lambda1, text_dimensions=text_dimensions)
+                        X_new = X_new[:, 0:len(categories)]
+                        preds = np.argmax(X_new, axis=1)
+                        train_preds = preds[training_indices]
+                        test_preds = preds[test_indices]
+                        print 'train error'
+                        loss(preds=train_preds.tolist(), U_test=U_train)
+                        print 'learning rate', learning_rate, 'alpha', alpha, 'lambda1', lambda1
+                        print 'eval error'
+                        loss(preds=test_preds.tolist(), U_test=U_eval)
+    else:                
+        X_new = edgexplain.edgexplain_geolocate_iterative(X=lil_matrix(X), G=mention_graph,train_ids = training_indices, test_ids=test_indices + non_target_nodes, id_index=dict(zip(idx + non_target_nodes, idx + non_target_node_indices)), label_slices=[[0, len(categories)]], preserve_coef=0.9, iterations=10, alpha=1, C=0, node_order='random', keep_topK=10, edgexplain__scaler=True)
+        X_new = X_new[:, 0:len(categories)].toarray()
+        preds = np.argmax(X_new, axis=1)
+        train_preds = preds[training_indices]
+        test_preds = preds[test_indices]
+        print 'train error'
+        loss(preds=train_preds.tolist(), U_test=U_train)
+        print 'eval error'
+        loss(preds=test_preds.tolist(), U_test=U_eval)
 
 
 def collaboration_weighted_projected_graph(B, nodes, weight_str=None, degree_power=1, caller='lp'):
@@ -2682,9 +2697,9 @@ if 'network_lp_regression_collapsed' in models_to_run:
 if 'network_lp_regression' in models_to_run:
     LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
 if 'network_lp_classification' in models_to_run:
-    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
+    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
 if 'network_lp_classification_edgexplain' in models_to_run:
-    LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
+    LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
 
 
 # junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)
