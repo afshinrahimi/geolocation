@@ -2038,7 +2038,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
         lat, lon = locationStr2Float(loc)
         trainLats.append(lat)
         trainLons.append(lon)
-
+        trainuserid_location[user_id] = (lat, lon)
         
     for user, loc in evalUsers.iteritems():
         user_id = node_id[user]
