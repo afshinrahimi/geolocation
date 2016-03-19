@@ -5,7 +5,7 @@ Created on 26 Feb 2016
 '''
 from os import path
 all_models = ['text_classification', 'network_lp_regression', 'network_lp_regression_collapsed', 'network_lp_classification', 'network_lp_classification_edgexplain']
-models_to_run = ['network_lp_classification_edgexplain']
+models_to_run = ['network_lp_classification']
 if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run and 'network_lp_classification_edgexplain' not in models_to_run:
     do_not_discretize = True
 else:

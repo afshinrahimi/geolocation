@@ -1912,7 +1912,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
     
     return current_mean, current_median, current_acc
 
-def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=False, project_to_main_users=False, node_order='l2h', remove_mentions_with_degree_one=True):
+def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=False, project_to_main_users=False, node_order='l2h', remove_mentions_with_degree_one=True, negative_sampling=False):
     '''
     This function implements iterative label propagation as in Modified Adsorption without the regulariser term.
     This is not parallel and is slower than running Junto.
@@ -1946,6 +1946,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
     assert len(U_all) == len(U_train) + len(U_eval), "duplicate user problem"
     idx = range(len(U_all))
     node_id = dict(zip(U_all, idx))
+    id_node = dict(zip(idx, U_all))
 
 
     
@@ -2013,7 +2014,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
         lat, lon = locationStr2Float(loc)
         trainLats.append(lat)
         trainLons.append(lon)
-
+        trainuserid_location[user_id] = (lat, lon)
         
     for user, loc in evalUsers.iteritems():
         user_id = node_id[user]
@@ -2104,15 +2105,30 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
             should_be_updated = False
             neighbors_labeldist = lil_matrix((1, len(categories)))
             nbrs = mention_graph[node]    
+            sum_nbr_edge_weights = 0.0
             for nbr, edge_data in nbrs.iteritems():
                 if nbr in node_labeldist:
                     should_be_updated = True
                     nbrlabeldist = node_labeldist[nbr]
                     edge_weight = edge_data['weight']
+                    sum_nbr_edge_weights += edge_weight
                     neighbors_labeldist = neighbors_labeldist + edge_weight * nbrlabeldist
+            
+            negative_labeldist = lil_matrix((1, len(categories)))
+            sum_negative_edge_weights = 0
+            if negative_sampling:
+                #select #nbrs random nodes from the graph
+                num_negative = 1
+                negative_nodes = random.sample(mention_graph.nodes(), num_negative)
+                for neg_n in negative_nodes:
+                    if neg_n in node_labeldist:
+                        negative_labeldist += node_labeldist[neg_n]
+                        sum_negative_edge_weights += 1
+                
             if should_be_updated:
                 old_labeldist = node_labeldist.get(node, csr_matrix((1, len(categories))))
-                new_labeldist = old_labeldist + neighbors_labeldist
+                new_labeldist = (sum_nbr_edge_weights + sum_negative_edge_weights) * old_labeldist + neighbors_labeldist - negative_labeldist
+                new_labeldist[new_labeldist < 0] = 0
                 # inplace normalization
                 normalize(new_labeldist, norm='l1', copy=False)
                 node_labeldist[node] = new_labeldist
@@ -2687,24 +2703,24 @@ def weighted_median(values, weights):
 
     return values_sorted[median_index]
 
-
-
-initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=do_not_discretize)
-if 'text_classification' in models_to_run:
-    t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
-if 'network_lp_regression_collapsed' in models_to_run:
-    LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
-if 'network_lp_regression' in models_to_run:
-    LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
-if 'network_lp_classification' in models_to_run:
-    LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
-if 'network_lp_classification_edgexplain' in models_to_run:
-    LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
-
-
-# junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)
-
-print str(datetime.now())
-script_end_time = time.time()
-script_execution_hour = (script_end_time - script_start_time) / 3600.0
-print "The script execution time (in hours) is " + str(script_execution_hour)
+if __name__ == '__main__':
+    
+    initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=do_not_discretize)
+    if 'text_classification' in models_to_run:
+        t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
+    if 'network_lp_regression_collapsed' in models_to_run:
+        LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+    if 'network_lp_regression' in models_to_run:
+        LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
+    if 'network_lp_classification' in models_to_run:
+        LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+    if 'network_lp_classification_edgexplain' in models_to_run:
+        LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
+    
+    
+    # junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)
+    
+    print str(datetime.now())
+    script_end_time = time.time()
+    script_execution_hour = (script_end_time - script_start_time) / 3600.0
+    print "The script execution time (in hours) is " + str(script_execution_hour)
