@@ -5,18 +5,19 @@ Created on 26 Feb 2016
 '''
 from os import path
 all_models = ['text_classification', 'network_lp_regression', 'network_lp_regression_collapsed', 'network_lp_classification', 'network_lp_classification_edgexplain']
-models_to_run = ['network_lp_classification']
-if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run and 'network_lp_classification_edgexplain' not in models_to_run:
+models_to_run = ['text_classification']
+prior = 'none'
+if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run and 'network_lp_classification_edgexplain' not in models_to_run and prior=='none':
     do_not_discretize = True
 else:
     do_not_discretize = False
 
-DATASET_NUMBER = 1
+DATASET_NUMBER = 3
 TEXT_ONLY = False
 DATA_HOME = '/home/arahimi/datasets'
-DATASETS = ['cmu', 'na', 'world']
+DATASETS = ['cmu', 'na', 'world-original']
 ENCODINGS = ['latin1', 'utf-8', 'utf-8']
-buckets = [50 , 2400, 2400]
+buckets = [300 , 2400, 2400]
 reguls = [5e-5, 1e-6, 2e-7]
 celeb_thresholds = [5 , 15, 15]
 BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
@@ -27,7 +28,7 @@ users_home = path.join(GEOTEXT_HOME, 'processed_data')
 testfile = path.join(users_home, 'user_info.test.gz')
 devfile = path.join(users_home, 'user_info.dev.gz')
 trainfile = path.join(users_home, 'user_info.train.gz')
-
+priors = ['none', 'backoff', 'dongle']
 print "dataset: " + DATASETS[DATASET_NUMBER - 1]
 lngs = []
 ltts = []
@@ -74,8 +75,8 @@ mention_graph = None
 partitionMethod = 'median'
 partitionMethods = ['kmeans', 'ward', 'average', 'complete', 'median','spectral', 'kmeans', 'meanShift', 'Birch']
 binary = False
-sublinear=True
-penalty = 'l1'
+sublinear=False
+penalty = 'elasticnet'
 fit_intercept = True
 norm = 'l2'
 use_idf = True

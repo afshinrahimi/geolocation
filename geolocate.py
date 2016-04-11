@@ -38,7 +38,8 @@ from params import *
 import utils
 import scipy.sparse as sparse
 import embedding_optimiser as edgexplain
-
+from sklearn.externals import joblib
+random.seed(0)
 __docformat__ = 'restructedtext en'
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
 
@@ -86,10 +87,10 @@ def distance(lat1, lon1, lat2, lon2):
 
 def users(file, type='train', write=False, readText=True):
     if readText:
-        print("Text is being read.")
+        logging.info("Text is being read.")
         if TEXT_ONLY:
-            print('mentions are removed.')
-
+            logging.info('mentions are removed.')
+    
     # with codecs.open(file, 'r', encoding=data_encoding) as inf:
     with gzip.open(file, 'r') as inf:
         for line in inf:
@@ -148,7 +149,7 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
             minlon = 1000
             maxlon = -1000
             fields = line.split('\t')
-            points = [locationStr2Float(loc) for loc in fields]
+            points = [locationStr2Float(loc) for loc in set(fields)]
             
             lats = [point[0] for point in points]
             lons = [point[1] for point in points]
@@ -170,21 +171,17 @@ def createTrainDir(granularity, partitionMethod, create_dir=False):
         longs = [location[1] for location in cluster]
         medianlat = np.median(lats)
         medianlon = np.median(longs)
-        meanlat = np.mean(lats)
-        meanlon = np.mean(longs)
         label = str(i).strip()
         categories.append(label)
         classLatMedian[label] = medianlat
         classLonMedian[label] = medianlon
-        classLatMean[label] = meanlat
-        classLonMean[label] = meanlon    
+  
         
         for location in cluster:
             locusers = locationUser[(location[0], location[1])]
             user_class = dict(zip(locusers, [i] * len(locusers)))
             trainClasses.update(user_class)
-    print "train directories created and class median and mean lat,lon computed. trainfile: " + filename
-
+    logging.info("train directories created and class median and mean lat,lon computed. trainfile: " + filename)
     devDistances = []
     for user in devUsers:
         locationStr = devUsers[user]
@@ -233,6 +230,8 @@ def assignClass(latitude, longitude):
         if dist < minDistance:
             minDistance = dist
             classIndex = i
+        if int(dist) == 0:
+            return classIndex, minDistance
     return classIndex, minDistance
 
 
@@ -398,7 +397,7 @@ def lossbycoordinates(coordinates):
 
 
 
-def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None, stop_words=None, novectorization=False, vocab=None):
+def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None, stop_words=None, novectorization=False, vocab=None, save_vectorizer=True):
     '''
     read train, dev and test dictionaries and extract textual features using tfidfvectorizer.
     '''
@@ -418,8 +417,8 @@ def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', bi
  
     logging.info("Extracting features from the training dataset using a sparse vectorizer")
     t0 = time.time()
-    
-    if vectorizer == None:    
+
+    if vectorizer == None:  
         if use_mention_dictionary:
             print "using @ mention dictionary as vocab..."
             extract_mentions()
@@ -427,8 +426,16 @@ def feature_extractor2(use_mention_dictionary=False, use_idf=True, norm='l2', bi
         else:
             print "mindf: " + str(min_df) + " maxdf: " + str(max_df)
             vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=stop_words, vocabulary=vocab, encoding=data_encoding)
+    print vectorizer
 
     X_train = vectorizer.fit_transform([trainText[u] for u in U_train])
+    vectorizer.stop_words_ = None
+    if save_vectorizer:
+        vectorizer_dump_file = path.join(GEOTEXT_HOME, 'vectorizer.pkl')
+        logging.info('dumping the vectorizer into ' + vectorizer_dump_file)
+        with open(vectorizer_dump_file, 'wb') as outf:
+            pickle.dump(vectorizer, outf)
+    
     feature_names = vectorizer.get_feature_names()
     duration = time.time() - t0
     print("n_samples: %d, n_features: %d" % X_train.shape)
@@ -463,7 +470,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
         # clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=False, tol=1e-3)
         # clf = linear_model.LogisticRegression(C=1.0, penalty='l2')
         # alpha = 0.000001
-        clf = SGDClassifier(loss='log', alpha=regul, penalty=penalty, l1_ratio=0.9, learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=10, fit_intercept=fit_intercept)
+        clf = SGDClassifier(loss='log', alpha=regul, penalty=penalty, l1_ratio=0.9, learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=40, fit_intercept=fit_intercept)
         # clf = LabelPropagation(kernel='rbf', gamma=50, n_neighbors=7, alpha=1, max_iter=30, tol=0.001)
         # clf = LabelSpreading(kernel='rbf', gamma=20, n_neighbors=7, alpha=0.2, max_iter=30, tol=0.001)
         # clf = ensemble.AdaBoostClassifier()
@@ -491,7 +498,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
     model_reloaded = False
     if reload_model and path.exists(model_dump_file):
         print('loading a trained model from %s' % (model_dump_file))
-        with open(model_dump_file, 'rb') as inf:
+        with gzip.open(model_dump_file, 'rb') as inf:
             clf = pickle.load(inf)
             model_reloaded = True
         print(clf)
@@ -513,6 +520,7 @@ def classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_t
                 # clf.sparsify()
         if save_model:
             print('dumpinng the model in %s' % (model_dump_file))
+            #joblib.dump(value=clf, filename=model_dump_file, compress=3)
             with open(model_dump_file, 'wb') as outf:
                 pickle.dump(clf, outf)
     if hasattr(clf, 'coef_'):
@@ -606,11 +614,11 @@ def initialize(partitionMethod, granularity, write=False, readText=True, reload_
 
     if not regression:
         create_directories(granularity, partitionMethod, write)  
-        write_init_info = False
+        write_init_info = True
         if write_init_info:
-            print('writing init info in %s' % (reload_file))
+            logging.info('writing init info in %s' % (reload_file))
             with open(reload_file, 'wb') as outf:
-                pickle.dump((classLatMean, classLonMedian, classLatMedian, classLonMean, userLocation, categories, trainUsers, trainClasses, testUsers, testClasses, devUsers, devClasses), outf)
+                pickle.dump((classLatMedian, classLonMedian), outf)
     else:
         logging.info('Not discretising locations as regression option is on!')
     logging.info("initialization finished")
@@ -648,7 +656,7 @@ def asclassification(granularity, partitionMethod, use_mention_dictionary=False,
         vocab = None
     stops = 'english'
     # partitionLocView(granularity=granularity, partitionMethod=partitionMethod)
-    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor2(norm=norm, use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2, stop_words=stops, binary=binary, sublinear_tf=sublinear, vocab=vocab, use_idf=use_idf)    
+    X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names = feature_extractor(norm=norm, use_mention_dictionary=use_mention_dictionary, min_df=10, max_df=0.2, stop_words=stops, binary=binary, sublinear_tf=sublinear, vocab=vocab, use_idf=use_idf, save_vectorizer=False)    
     if use_sparse_code:
         print("using a matrix factorization technique to learn a better representation of users...")
         sparse_coded_dump = path.join(GEOTEXT_HOME, 'sparse_coded.pkl')
@@ -681,12 +689,12 @@ def asclassification(granularity, partitionMethod, use_mention_dictionary=False,
         else:
             reguls_coefs = [2 ** -19]
     elif DATASET_NUMBER == 3:
-        reguls_coefs = [1e-8, 5e-8, 1e-7, 5e-7, 1e-6]
+        reguls_coefs = [9e-8, 1e-7, 2e-7, 3e-7, 4e-7, 5e-7, 6e-7, 7e-7, 8e-7]
     if penalty == 'none':
         reguls_coefs = [1e-200]
-    # for regul in reguls_coefs:
-    for regul in [reguls[DATASET_NUMBER - 1]]:
-        preds, probs, U_test, meanTest, medianTest, acc_at_161_test, meanDev, medianDev, acc_at_161_dev, non_zero_parameters = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=granularity, regul=regul, partitionMethod=partitionMethod, penalty=penalty, fit_intercept=fit_intercept, reload_model=False)
+    for regul in reguls_coefs:
+    #for regul in [reguls[DATASET_NUMBER - 1]]:
+        preds, probs, U_test, meanTest, medianTest, acc_at_161_test, meanDev, medianDev, acc_at_161_dev, non_zero_parameters = classify(X_train, Y_train, U_train, X_dev, Y_dev, U_dev, X_test, Y_test, U_test, categories, feature_names, granularity=granularity, regul=regul, partitionMethod=partitionMethod, penalty=penalty, fit_intercept=fit_intercept, reload_model=False, save_model=False)
         regul_acc[regul] = acc_at_161_dev
         regul_nonzero[regul] = non_zero_parameters
         if acc_at_161_dev > best_dev_acc:
@@ -1184,7 +1192,7 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
     project_to_main_users = True
     if project_to_main_users:
         # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
-        mention_graph = collaboration_weighted_projected_graph(mention_graph, idx, weight_str=None, degree_power=1, caller='mad')
+        mention_graph = efficient_collaboration_weighted_projected_graph(mention_graph, idx, weight_str=None, degree_power=1, caller='mad')
         # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
         # mention_graph = bipartite.projected_graph(mention_graph, main_users)
     connected_nodes = set()
@@ -1259,7 +1267,7 @@ def ideal_network_errors():
 
 
                 
-def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=False, node_order='l2h', remove_mentions_with_degree_one=True):
+def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=False, node_order='l2h', remove_mentions_with_degree_one=False):
     '''
     Run label propagation over real-valued coordinates of the @-mention graph.
     The coordinates of the training users are kept unchanged and the coordinates
@@ -1271,10 +1279,8 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
     else:
         evalText = testText
         evalUsers = testUsers
-    save_gr = False
-    verbose = False
+
     mention_graph = nx.Graph()
-    graph_file_address = path.join(GEOTEXT_HOME, 'direct_graph.graphml')
     U_all = trainUsers.keys() + evalUsers.keys()
     assert len(U_all) == len(trainUsers) + len(evalUsers), "duplicate user problem"
     idx = range(len(U_all))
@@ -1418,7 +1424,7 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
             mention_graph.remove_node(celebrity)
  
     if remove_mentions_with_degree_one:
-        mention_nodes = set(mention_graph.nodes()) - set(node_id.values())
+        mention_nodes = set(mention_graph.nodes()) - set(U_all) - set(dongle_nodes)
         mention_degree = mention_graph.degree(nbunch=mention_nodes, weight=None)
         one_degree_non_target = [node for node, degree in mention_degree.iteritems() if degree < 2]
         logging.info('found ' + str(len(one_degree_non_target)) + ' mentions with degree 1 in the graph.')
@@ -1518,7 +1524,7 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
                     nbrlats.append(lat)
                     nbrlons.append(lon)
                     if normalize_edge and weighted:
-                        edge_weight_normalized = float(edge_weight) / (mention_graph.degree(nbr) * mention_graph.degree(node))
+                        edge_weight_normalized = float(edge_weight * edge_weight) / (mention_graph.degree(nbr) * mention_graph.degree(node))
                         nbr_edge_weights.append(edge_weight_normalized)
                     # elif not weighted:
                     #    nbr_edge_weights.append(1)
@@ -1537,7 +1543,9 @@ def LP(weighted=True, prior='none', normalize_edge=False, remove_celebrities=Fal
             if len(nbrlons) > 0:
                 nbr_median_lat, nbr_median_lon = weighted_median(nbrlats, nbr_edge_weights), weighted_median(nbrlons, nbr_edge_weights)
                 node_location[node] = (nbr_median_lat, nbr_median_lon)
-
+        if iter_num > 3:
+            with open('node_location_withdeg1_' + str(iter_num) + '.pkl', 'wb') as outf:
+                pickle.dump(node_location, outf)
         iter_num += 1
         if iter_num == max_iter:
             converged = True
@@ -1707,7 +1715,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                 test_confidences = testProbs[np.arange(0, preds.shape[0]), preds]
                 loss(preds=preds, U_test=U_test)
                 if dongle:
-                    mention_graph.add_nodes_from([u + '.dongle' for u in U_test])
+                    mention_graph.add_nodes_from([str(node_id[u]) + '.dongle' for u in U_test])
                 user_index = 0   
                 for user, pred in zip(U_test, preds):
                     user_id = node_id[user]
@@ -1716,7 +1724,7 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                     if backoff:
                         text_preds[user_id] = (lat, lon)
                     if dongle:
-                        dongle_node = user_id + '.dongle'
+                        dongle_node = str(user_id) + '.dongle'
                         w = test_confidences[user_index]
                         mention_graph.add_edge(dongle_node, user_id, weight=w)
                         node_location[dongle_node] = (lat, lon)
@@ -1742,7 +1750,8 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
         logging.info('projecting the graph into the target user.')
         main_users = node_id.values()
         # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
-        mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
+        #mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
+        mention_graph = efficient_collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
         # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
         # mention_graph = bipartite.projected_graph(mention_graph, main_users)
     logging.info("Edge number: " + str(mention_graph.number_of_edges()))
@@ -1851,8 +1860,8 @@ def LP_collapsed(weighted=True, prior='none', normalize_edge=False, remove_celeb
                     edge_weight = mention_graph[node][nbr]['weight']
                     nbrlats.append(lat)
                     nbrlons.append(lon)
-                    if normalize_edge and weighted:
-                        edge_weight_normalized = float(edge_weight) / (mention_graph.degree(nbr) * mention_graph.degree(node))
+                    if normalize_edge:
+                        edge_weight_normalized = float(edge_weight * edge_weight) / (mention_graph.degree(nbr) * mention_graph.degree(node))
                         nbr_edge_weights.append(edge_weight_normalized)
                     # elif not weighted:
                     #    nbr_edge_weights.append(1)
@@ -2056,7 +2065,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
         logging.info('projecting the graph into the target user.')
         main_users = node_id.values()
         # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
-        mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
+        mention_graph = efficient_collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
         # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
         # mention_graph = bipartite.projected_graph(mention_graph, main_users)
     logging.info("Edge number: " + str(mention_graph.number_of_edges()))
@@ -2118,7 +2127,7 @@ def LP_classification(weighted=True, prior='none', normalize_edge=False, remove_
             sum_negative_edge_weights = 0
             if negative_sampling:
                 #select #nbrs random nodes from the graph
-                num_negative = 1
+                num_negative = max(len(nbrs) / 2, 1)
                 negative_nodes = random.sample(mention_graph.nodes(), num_negative)
                 for neg_n in negative_nodes:
                     if neg_n in node_labeldist:
@@ -2288,7 +2297,7 @@ def LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=Fal
         logging.info('projecting the graph into the target user.')
         main_users = node_id.values()
         # mention_graph = bipartite.overlap_weighted_projected_graph(mention_graph, main_users, jaccard=False)
-        mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
+        mention_graph = efficient_collaboration_weighted_projected_graph(mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
         # mention_graph = collaboration_weighted_projected_graph(mention_graph, main_users, weight_str='weight')
         # mention_graph = bipartite.projected_graph(mention_graph, main_users)
     logging.info("Edge number: " + str(mention_graph.number_of_edges()))
@@ -2449,6 +2458,7 @@ def collaboration_weighted_projected_graph(B, nodes, weight_str=None, degree_pow
     else:
         pred = B.adj
         G = nx.Graph()
+    
     G.graph.update(B.graph)
     G.add_nodes_from((n, B.node[n]) for n in nodes)
     direct_edge_counter = 0
@@ -2467,26 +2477,135 @@ def collaboration_weighted_projected_graph(B, nodes, weight_str=None, degree_pow
         unbrs = set(B[n1])
         nbrs2 = set((n for nbr in unbrs for n in B[nbr])) - set([n1])
         nbrs2 = [n for n in nbrs2 if type(n) == int]
+        
             # pass
         for n2 in nbrs2:
             weight = 0
-            if G.has_edge(n1, n2):
-                weight += G[n1][n2]['weight'] 
+            #if G.has_edge(n1, n2):
+                #weight += G[n1][n2]['weight']
+                #pass 
             vnbrs = set(pred[n2])
             common = unbrs & vnbrs
-            del vnbrs
+            #all = unbrs | vnbrs
 
             if weight_str is not None:
                 weight += sum([1.0 * B[n1][n][weight_str] * B[n2][n][weight_str] / ((len(B[n]) - 1) ** degree_power) for n in common if len(B[n]) > 1])
             else:
-                    weight += sum([1.0 / ((len(B[n]) - 1) ** degree_power) for n in common if len(B[n]) > 1])
+                weight += sum([1.0 / ((len(B[n]) - 1) ** degree_power) for n in common if len(B[n]) > 1])
+                #weight += float(len(common)) / len(all)
             if weight != 0:
                 G.add_edge(n1, n2, weight=weight)
     
     
     return G
 
+def efficient_collaboration_weighted_projected_graph(B, nodes, weight_str=None, degree_power=1, caller='lp'):
+    r"""Newman's weighted projection of B onto one of its node sets.
 
+    The collaboration weighted projection is the projection of the
+    bipartite network B onto the specified nodes with weights assigned
+    using Newman's collaboration model [1]_:
+
+    .. math::
+        
+        w_{v,u} = \sum_k \frac{\delta_{v}^{w} \delta_{w}^{k}}{k_w - 1}
+
+    where `v` and `u` are nodes from the same bipartite node set,
+    and `w` is a node of the opposite node set. 
+    The value `k_w` is the degree of node `w` in the bipartite
+    network and `\delta_{v}^{w}` is 1 if node `v` is
+    linked to node `w` in the original bipartite graph or 0 otherwise.
+ 
+    The nodes retain their attributes and are connected in the resulting
+    graph if have an edge to a common node in the original bipartite
+    graph.
+
+    Parameters
+    ----------
+    B : NetworkX graph 
+      The input graph should be bipartite. 
+
+    nodes : list or iterable
+      Nodes to project onto (the "bottom" nodes).
+
+    Returns
+    -------
+    Graph : NetworkX graph 
+       A graph that is the projection onto the given nodes.
+
+    Examples
+    --------
+    >>> from networkx.algorithms import bipartite
+    >>> B = nx.path_graph(5)
+    >>> B.add_edge(1,5)
+    >>> G = bipartite.collaboration_weighted_projected_graph(B, [0, 2, 4, 5])
+    >>> print(G.nodes())
+    [0, 2, 4, 5]
+    >>> for edge in G.edges(data=True): print(edge)
+    ... 
+    (0, 2, {'weight': 0.5})
+    (0, 5, {'weight': 0.5})
+    (2, 4, {'weight': 1.0})
+    (2, 5, {'weight': 0.5})
+    
+    Notes
+    ------
+    No attempt is made to verify that the input graph B is bipartite.
+    The graph and node properties are (shallow) copied to the projected graph.
+
+    See Also
+    --------
+    is_bipartite, 
+    is_bipartite_node_set, 
+    sets, 
+    weighted_projected_graph,
+    overlap_weighted_projected_graph,
+    generic_weighted_projected_graph,
+    projected_graph 
+
+    References
+    ----------
+    .. [1] Scientific collaboration networks: II. 
+        Shortest paths, weighted networks, and centrality, 
+        M. E. J. Newman, Phys. Rev. E 64, 016132 (2001).
+    """
+    nodes = set(nodes)
+    G = nx.Graph()
+    G.add_nodes_from(nodes)
+    all_nodes = set(B.nodes())
+    i = 0
+    tenpercent = len(all_nodes) / 10
+    for m in all_nodes:
+        if i % tenpercent == 0:
+            logging.info(str(10 * i / tenpercent) + "%")
+        i += 1  
+
+        nbrs = B[m]
+        target_nbrs = [t for t in nbrs if t in nodes]
+        if len(nbrs) < 2:
+            continue
+        if m in nodes:
+            for n in target_nbrs:
+                if m < n:
+                    n_nbrs = len(B[n])
+                    if n_nbrs > 1:
+                        w_n = 1.0 / (n_nbrs - 1)
+                    else:
+                        w_n = 0
+                    w = 1.0 / (len(nbrs) - 1) + w_n
+                    if G.has_edge(m, n):
+                        G[m][n]['weight'] += w
+                    else:
+                        G.add_edge(m, n, weight=w)
+        for n1 in target_nbrs:
+            for n2 in target_nbrs:
+                if n1 < n2:
+                    w = 1.0 / (len(nbrs) - 1)
+                    if G.has_edge(n1, n2):
+                        G[n1][n2]['weight'] += w
+                    else:
+                        G.add_edge(n1, n2, weight=w)
+    return G
 
 def junto_postprocessing(multiple=False, dev=False, method='median', celeb_threshold=5, weighted=False, text_prior='none', postfix=''):
     EVALUATE_REAL_VALUED = False
@@ -2706,16 +2825,17 @@ def weighted_median(values, weights):
 if __name__ == '__main__':
     
     initialize(partitionMethod=partitionMethod, granularity=BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=do_not_discretize)
+    pdb.set_trace()
     if 'text_classification' in models_to_run:
         t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=BUCKET_SIZE, partitionMethod=partitionMethod, use_mention_dictionary=False, binary=binary, sublinear=sublinear, penalty=penalty, fit_intercept=fit_intercept, norm=norm, use_idf=use_idf)
     if 'network_lp_regression_collapsed' in models_to_run:
-        LP_collapsed(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+        LP_collapsed(weighted=False, prior=prior, normalize_edge=True, remove_celebrities=True, dev=False, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
     if 'network_lp_regression' in models_to_run:
-        LP(weighted=False, prior='none', normalize_edge=False, remove_celebrities=True, dev=True, node_order='random')
+        LP(weighted=False, prior=prior, normalize_edge=True, remove_celebrities=True, dev=False, node_order='random')
     if 'network_lp_classification' in models_to_run:
-        LP_classification(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+        LP_classification(weighted=True, prior=prior, normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
     if 'network_lp_classification_edgexplain' in models_to_run:
-        LP_classification_edgexplain(weighted=True, prior='none', normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
+        LP_classification_edgexplain(weighted=True, prior=prior, normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
     
     
     # junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=partitionMethod, celeb_threshold=5, weighted=True, text_prior=True)
