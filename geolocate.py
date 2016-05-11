@@ -36,6 +36,9 @@ import scipy.sparse as sparse
 import embedding_optimiser as edgexplain
 from sklearn.externals import joblib
 from os import path
+from params import classLatMedian
+import operator
+
 random.seed(0)
 __docformat__ = 'restructedtext en'
 logging.basicConfig(format='%(asctime)s %(message)s', datefmt='%m/%d/%Y %I:%M:%S %p', level=logging.INFO)
@@ -412,6 +415,404 @@ def loss(preds, U_eval):
 
     return np.mean(distances), np.median(distances), acc_at_161
 
+def train_regression_models():
+    from sklearn.neighbors import NearestNeighbors
+    class_users = defaultdict(list)
+    user_index = {u:i for i,u in enumerate(params.U_train)}
+    class_knn = {}
+    for u, c in params.trainClasses.iteritems():
+        class_users[c].append(user_index[u])
+    for c in params.categories:
+        #get the important dimensions from text classification model
+        
+        important_dimensions = params.clf.coef_[int(c)].nonzero()[1]
+        X_region = params.X_train[class_users[int(c)]]
+        X_region = X_region[:, important_dimensions]
+        knn = NearestNeighbors(n_neighbors=10, algorithm='ball_tree')
+        knn.fit(X_region)
+        class_knn[int(c)] = (knn, class_users[int(c)], important_dimensions)
+    return class_knn    
+
+def train_classification_models():
+    from sklearn.naive_bayes import MultinomialNB
+    from sklearn.cluster import KMeans
+    import kdtree
+    do_kmeans = True
+    class_users = defaultdict(list)
+    user_index = {u:i for i,u in enumerate(params.U_train)}
+    index_user = {i:u for u,i in user_index.iteritems()}
+    class_clf = {}
+    for u, c in params.trainClasses.iteritems():
+        class_users[c].append(user_index[u])
+    for c in params.categories:
+        #get the important dimensions from text classification model
+        users = class_users[int(c)]
+        points = [locationStr2Float(params.trainUsers[index_user[i]]) for i in users]
+        if do_kmeans:
+            kmeans = KMeans(n_clusters=min(4, len(points)), random_state=0)
+            kmeans.fit(np.array(points))
+            cluster_centers = kmeans.cluster_centers_
+            Y_region = kmeans.labels_
+        else:
+            clusterer = kdtree.KDTreeClustering(bucket_size=min(params.BUCKET_SIZE / 4, len(points)))
+            clusterer.fit(points)
+            Y_region = clusterer.get_clusters()
+            #print clusterer.num_clusters
+            
+        user_region = {index_user[uid]: Y_region[i] for i, uid in enumerate(users)}
+        region_lats = defaultdict(list)
+        region_lons = defaultdict(list)
+        for u, r in user_region.iteritems():
+            lat, lon = locationStr2Float(params.trainUsers[u])
+            region_lats[r].append(lat)
+            region_lons[r].append(lon)
+        region_median_lat = {r:np.median(lats) for r, lats in region_lats.iteritems()}
+        region_median_lon = {r:np.median(lons) for r, lons in region_lons.iteritems()}
+        region_median = {r: (region_median_lat[r], region_median_lon[r]) for r in region_lats}
+        
+        #important_dimensions = params.clf.coef_[int(c)].nonzero()[1]
+        X_region = params.X_train[users]
+        #X_region = X_region[:, important_dimensions]
+        #clf = MultinomialNB()
+        clf = SGDClassifier(loss='log', alpha=1e-4, penalty='elasticnet', l1_ratio=0.9, learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=10, fit_intercept=True)
+        clf.fit(X_region, Y_region)
+
+        class_clf[int(c)] = (clf, users, region_median)
+    return class_clf 
+
+def train_clustering_models():
+    from sklearn import mixture
+    class_users = defaultdict(list)
+    user_index = {u:i for i,u in enumerate(params.U_train)}
+    index_user = {i:u for u,i in user_index.iteritems()}    
+    for u, c in params.trainClasses.iteritems():
+        class_users[c].append(user_index[u])
+    class_clf = {}
+    for c in params.categories:
+        c = int(c)
+        users = class_users[c]
+        X_region = params.X_train[users]
+        important_dimensions = params.clf.coef_[c].nonzero()[1]
+        #important_dimensions = np.array(range(params.clf.coef_[c].shape[1]))
+        X_region = X_region[:, important_dimensions]
+        clusterer = mixture.GMM(n_components=4)
+        Y_region = clusterer.fit_predict(X_region.toarray())
+        user_region = {index_user[uid]: Y_region[i] for i, uid in enumerate(users)}
+        region_lats = defaultdict(list)
+        region_lons = defaultdict(list)
+        for u, r in user_region.iteritems():
+            lat, lon = locationStr2Float(params.trainUsers[u])
+            region_lats[r].append(lat)
+            region_lons[r].append(lon)
+        region_median_lat = {r:np.median(lats) for r, lats in region_lats.iteritems()}
+        region_median_lon = {r:np.median(lons) for r, lons in region_lons.iteritems()}
+        region_median = {r: (region_median_lat[r], region_median_lon[r]) for r in region_lats}
+        class_clf[c] = (clusterer, users, region_median, important_dimensions)   
+    return class_clf     
+        
+def loss_clustering(preds, U_eval):
+    
+    if len(preds) != len(U_eval): 
+        print "The number of test sample predictions is: " + str(len(preds))
+        print "The number of test samples is: " + str(len(U_eval))
+        print "fatal error!"
+        sys.exit()
+    #check if it is dev or test
+    if U_eval[0] in params.U_dev:
+        dev = True
+    else:
+        dev = False
+    def closest_neighbour_classes():
+        neighbours = defaultdict(dict)
+        sorted_neighbours = {}
+        for c1 in params.classLatMedian:
+            for c2 in params.classLatMedian:
+                if c1 == c2:
+                    continue
+                lat1, lon1 = params.classLatMedian[c1], params.classLonMedian[c1]
+                lat2, lon2 = params.classLatMedian[c2], params.classLonMedian[c2]
+                dd = distance(lat1, lon1, lat2, lon2)
+                neighbours[c1][c2] = dd
+        for c, nbrs in neighbours.iteritems():
+            sorted_nbrs = sorted(nbrs.items(), key=operator.itemgetter(1))
+            sorted_neighbours[c] = sorted_nbrs
+        return sorted_neighbours
+                
+    #sorted_neighbours = closest_neighbour_classes()    
+    class_clf = train_clustering_models()
+    sumMeanDistance = 0
+    sumMedianDistance = 0
+    distances = []
+    inclass_closest_point_distances = []
+    global_closest_point_distances = []
+    inclass_gmm_distances = []
+    user_location = {}
+    acc = 0.0
+    center_of_us = (39.50, -98.35)
+    nyc = (40.7127, -74.0059)
+    la = (34.0500, -118.2500)
+    distances_from_nyc = []
+    distances_from_la = []
+    distances_from_center = []
+    #global_closest = False
+    for i in range(0, len(preds)):
+        user = U_eval[i]
+        location = params.userLocation[user].split(',')
+        lat = float(location[0])
+        lon = float(location[1])
+        user_original_class, minDistance = assignClass(lat, lon)
+
+        prediction = params.categories[preds[i]]
+        medianlat = params.classLatMedian[prediction]  
+        medianlon = params.classLonMedian[prediction]
+        #nearby_classes =  [c[0] for c in sorted_neighbours[prediction][0:1]]
+        #nearby_classes = []
+        #nearby_classes.append(prediction)
+        #nearby_classes = set(nearby_classes)
+        
+        #training_points_in_class = {u:locationStr2Float(params.trainUsers[u]) for u, c in params.trainClasses.iteritems() if str(c) in nearby_classes or global_closest}
+        #u_point_distances = {u:distance(lat, lon, l[0], l[1]) for u, l in training_points_in_class.iteritems()}
+        #closest_point =  min(u_point_distances, key=u_point_distances.get)
+        #inclass_closest_distance = u_point_distances[closest_point]
+        #inclass_closest_point_distances.append(inclass_closest_distance)
+        
+        #regress within predicted class using knn
+        clf, users, region_median, important_dimensions = class_clf[preds[i]]
+        if dev:
+            X_u = params.X_dev[i, important_dimensions]
+        else:
+            X_u = params.X_test[i, important_dimensions]
+
+        region = clf.predict(X_u.toarray())[0]
+        nblat, nblon = region_median[region]
+        inclass_gmm_distances.append(distance(lat, lon, nblat, nblon))   
+
+        distances.append(distance(lat, lon, medianlat, medianlon))
+
+    acc_at_161 = 100 * len([d for d in distances if d < 161]) / float(len(distances))
+    print "Mean: " + str(int(np.mean(distances))) + " Median: " + str(int(np.median(distances))) + " Acc@161: " + str(int(acc_at_161))
+    print
+    #inclass_acc_at_161 = 100 * len([d for d in inclass_closest_point_distances if d < 161]) / float(len(inclass_closest_point_distances))
+    #print "In Class closest -- Mean: " + str(int(np.mean(inclass_closest_point_distances))) + " Median: " + str(int(np.median(inclass_closest_point_distances))) + " Acc@161: " + str(int(inclass_acc_at_161))
+    #print
+    nn_acc_at_161 = 100 * len([d for d in inclass_gmm_distances if d < 161]) / float(len(inclass_gmm_distances))
+    print "In Class classification -- Mean: " + str(int(np.mean(inclass_gmm_distances))) + " Median: " + str(int(np.median(inclass_gmm_distances))) + " Acc@161: " + str(int(nn_acc_at_161))
+    print
+
+    extra_info = False
+    if extra_info:
+        print "Mean distance from center of us is " + str(int(np.mean(distances_from_center)))
+        print "Median distance from center of us is " + str(int(np.median(distances_from_center)))
+        print "Mean distance from nyc is " + str(int(np.mean(distances_from_nyc)))
+        print "Median distance from nyc is " + str(int(np.median(distances_from_nyc)))
+        print "Mean distance from la is " + str(int(np.mean(distances_from_la)))
+        print "Median distance from la is " + str(int(np.median(distances_from_la)))
+
+    return np.mean(distances), np.median(distances), acc_at_161    
+def loss_regression(preds, U_eval):
+    
+    if len(preds) != len(U_eval): 
+        print "The number of test sample predictions is: " + str(len(preds))
+        print "The number of test samples is: " + str(len(U_eval))
+        print "fatal error!"
+        sys.exit()
+    #check if it is dev or test
+    if U_eval[0] in params.U_dev:
+        dev = True
+    else:
+        dev = False
+    def closest_neighbour_classes():
+        neighbours = defaultdict(dict)
+        sorted_neighbours = {}
+        for c1 in params.classLatMedian:
+            for c2 in params.classLatMedian:
+                if c1 == c2:
+                    continue
+                lat1, lon1 = params.classLatMedian[c1], params.classLonMedian[c1]
+                lat2, lon2 = params.classLatMedian[c2], params.classLonMedian[c2]
+                dd = distance(lat1, lon1, lat2, lon2)
+                neighbours[c1][c2] = dd
+        for c, nbrs in neighbours.iteritems():
+            sorted_nbrs = sorted(nbrs.items(), key=operator.itemgetter(1))
+            sorted_neighbours[c] = sorted_nbrs
+        return sorted_neighbours
+                
+    sorted_neighbours = closest_neighbour_classes()    
+    class_knn = train_regression_models()
+    sumMeanDistance = 0
+    sumMedianDistance = 0
+    distances = []
+    inclass_closest_point_distances = []
+    global_closest_point_distances = []
+    inclass_nearestn_distances = []
+    user_location = {}
+    acc = 0.0
+    center_of_us = (39.50, -98.35)
+    nyc = (40.7127, -74.0059)
+    la = (34.0500, -118.2500)
+    distances_from_nyc = []
+    distances_from_la = []
+    distances_from_center = []
+    global_closest = False
+    for i in range(0, len(preds)):
+        user = U_eval[i]
+        location = params.userLocation[user].split(',')
+        lat = float(location[0])
+        lon = float(location[1])
+        user_original_class, minDistance = assignClass(lat, lon)
+
+        prediction = params.categories[preds[i]]
+        medianlat = params.classLatMedian[prediction]  
+        medianlon = params.classLonMedian[prediction]
+        nearby_classes =  [c[0] for c in sorted_neighbours[prediction][0:1]]
+        nearby_classes = []
+        nearby_classes.append(prediction)
+        nearby_classes = set(nearby_classes)
+        
+        training_points_in_class = {u:locationStr2Float(params.trainUsers[u]) for u, c in params.trainClasses.iteritems() if str(c) in nearby_classes or global_closest}
+        u_point_distances = {u:distance(lat, lon, l[0], l[1]) for u, l in training_points_in_class.iteritems()}
+        closest_point =  min(u_point_distances, key=u_point_distances.get)
+        inclass_closest_distance = u_point_distances[closest_point]
+        inclass_closest_point_distances.append(inclass_closest_distance)
+        
+        #regress within predicted class using knn
+        knn, uids, important_features = class_knn[preds[i]]
+        if dev:
+            X_u = params.X_dev[i][:, important_features]
+        else:
+            X_u = params.X_test[i][:, important_features]
+
+        nearest_neighbor_indices = knn.kneighbors(X_u)[1][0].tolist()
+        nearest_neighbors = [uids[_id] for _id in nearest_neighbor_indices]
+        coordinates = [locationStr2Float(params.trainUsers[params.U_train[nearest_neighbor]]) for nearest_neighbor in nearest_neighbors]
+        nnlat = np.median([coor[0] for coor in coordinates])
+        nnlon = np.median([coor[1] for coor in coordinates])
+        inclass_nearestn_distances.append(distance(lat, lon, nnlat, nnlon))   
+
+        distances.append(distance(lat, lon, medianlat, medianlon))
+
+    acc_at_161 = 100 * len([d for d in distances if d < 161]) / float(len(distances))
+    print "Mean: " + str(int(np.mean(distances))) + " Median: " + str(int(np.median(distances))) + " Acc@161: " + str(int(acc_at_161))
+    print
+    inclass_acc_at_161 = 100 * len([d for d in inclass_closest_point_distances if d < 161]) / float(len(inclass_closest_point_distances))
+    print "In Class closest -- Mean: " + str(int(np.mean(inclass_closest_point_distances))) + " Median: " + str(int(np.median(inclass_closest_point_distances))) + " Acc@161: " + str(int(inclass_acc_at_161))
+    print
+    nn_acc_at_161 = 100 * len([d for d in inclass_nearestn_distances if d < 161]) / float(len(inclass_nearestn_distances))
+    print "In Class Regression -- Mean: " + str(int(np.mean(inclass_nearestn_distances))) + " Median: " + str(int(np.median(inclass_nearestn_distances))) + " Acc@161: " + str(int(nn_acc_at_161))
+    print
+
+    extra_info = False
+    if extra_info:
+        print "Mean distance from center of us is " + str(int(np.mean(distances_from_center)))
+        print "Median distance from center of us is " + str(int(np.median(distances_from_center)))
+        print "Mean distance from nyc is " + str(int(np.mean(distances_from_nyc)))
+        print "Median distance from nyc is " + str(int(np.median(distances_from_nyc)))
+        print "Mean distance from la is " + str(int(np.mean(distances_from_la)))
+        print "Median distance from la is " + str(int(np.median(distances_from_la)))
+
+    return np.mean(distances), np.median(distances), acc_at_161
+
+def loss_classification(preds, U_eval):
+    
+    if len(preds) != len(U_eval): 
+        print "The number of test sample predictions is: " + str(len(preds))
+        print "The number of test samples is: " + str(len(U_eval))
+        print "fatal error!"
+        sys.exit()
+    #check if it is dev or test
+    if U_eval[0] in params.U_dev:
+        dev = True
+    else:
+        dev = False
+    def closest_neighbour_classes():
+        neighbours = defaultdict(dict)
+        sorted_neighbours = {}
+        for c1 in params.classLatMedian:
+            for c2 in params.classLatMedian:
+                if c1 == c2:
+                    continue
+                lat1, lon1 = params.classLatMedian[c1], params.classLonMedian[c1]
+                lat2, lon2 = params.classLatMedian[c2], params.classLonMedian[c2]
+                dd = distance(lat1, lon1, lat2, lon2)
+                neighbours[c1][c2] = dd
+        for c, nbrs in neighbours.iteritems():
+            sorted_nbrs = sorted(nbrs.items(), key=operator.itemgetter(1))
+            sorted_neighbours[c] = sorted_nbrs
+        return sorted_neighbours
+                
+    sorted_neighbours = closest_neighbour_classes()    
+    class_clf = train_classification_models()
+    sumMeanDistance = 0
+    sumMedianDistance = 0
+    distances = []
+    inclass_closest_point_distances = []
+    global_closest_point_distances = []
+    inclass_naivebayes_distances = []
+    user_location = {}
+    acc = 0.0
+    center_of_us = (39.50, -98.35)
+    nyc = (40.7127, -74.0059)
+    la = (34.0500, -118.2500)
+    distances_from_nyc = []
+    distances_from_la = []
+    distances_from_center = []
+    global_closest = False
+    for i in range(0, len(preds)):
+        user = U_eval[i]
+        location = params.userLocation[user].split(',')
+        lat = float(location[0])
+        lon = float(location[1])
+        user_original_class, minDistance = assignClass(lat, lon)
+
+        prediction = params.categories[preds[i]]
+        medianlat = params.classLatMedian[prediction]  
+        medianlon = params.classLonMedian[prediction]
+        nearby_classes =  [c[0] for c in sorted_neighbours[prediction][0:1]]
+        nearby_classes = []
+        nearby_classes.append(prediction)
+        nearby_classes = set(nearby_classes)
+        
+        training_points_in_class = {u:locationStr2Float(params.trainUsers[u]) for u, c in params.trainClasses.iteritems() if str(c) in nearby_classes or global_closest}
+        u_point_distances = {u:distance(lat, lon, l[0], l[1]) for u, l in training_points_in_class.iteritems()}
+        closest_point =  min(u_point_distances, key=u_point_distances.get)
+        inclass_closest_distance = u_point_distances[closest_point]
+        inclass_closest_point_distances.append(inclass_closest_distance)
+        
+        #regress within predicted class using knn
+        clf, uids, region_median = class_clf[preds[i]]
+        if dev:
+            X_u = params.X_dev[i]
+        else:
+            X_u = params.X_test[i]
+
+        region = clf.predict(X_u)[0]
+        nblat, nblon = region_median[region]
+        inclass_naivebayes_distances.append(distance(lat, lon, nblat, nblon))   
+
+        distances.append(distance(lat, lon, medianlat, medianlon))
+
+    acc_at_161 = 100 * len([d for d in distances if d < 161]) / float(len(distances))
+    print "Mean: " + str(int(np.mean(distances))) + " Median: " + str(int(np.median(distances))) + " Acc@161: " + str(int(acc_at_161))
+    print
+    inclass_acc_at_161 = 100 * len([d for d in inclass_closest_point_distances if d < 161]) / float(len(inclass_closest_point_distances))
+    print "In Class closest -- Mean: " + str(int(np.mean(inclass_closest_point_distances))) + " Median: " + str(int(np.median(inclass_closest_point_distances))) + " Acc@161: " + str(int(inclass_acc_at_161))
+    print
+    nn_acc_at_161 = 100 * len([d for d in inclass_naivebayes_distances if d < 161]) / float(len(inclass_naivebayes_distances))
+    print "In Class classification -- Mean: " + str(int(np.mean(inclass_naivebayes_distances))) + " Median: " + str(int(np.median(inclass_naivebayes_distances))) + " Acc@161: " + str(int(nn_acc_at_161))
+    print
+
+    extra_info = False
+    if extra_info:
+        print "Mean distance from center of us is " + str(int(np.mean(distances_from_center)))
+        print "Median distance from center of us is " + str(int(np.median(distances_from_center)))
+        print "Mean distance from nyc is " + str(int(np.mean(distances_from_nyc)))
+        print "Median distance from nyc is " + str(int(np.median(distances_from_nyc)))
+        print "Mean distance from la is " + str(int(np.mean(distances_from_la)))
+        print "Median distance from la is " + str(int(np.median(distances_from_la)))
+
+    return np.mean(distances), np.median(distances), acc_at_161
+
+
 def lossbycoordinates(coordinates):
     if len(coordinates) != len(params.testUsers): 
         print "The number of test sample predictions is: " + str(len(coordinates))
@@ -555,6 +956,7 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
         print(clf)
         t0 = time.time()
         clf.fit(params.X_train, params.Y_train)
+        params.clf = clf
         train_time = time.time() - t0
         print("train time: %0.3fs" % train_time)
         if hasattr(clf, 'coef_'):
@@ -562,9 +964,9 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
             total_param_count = clf.coef_.shape[0] * clf.coef_.shape[1]
             zero_percent = int(100 * float(zero_count) / total_param_count)
             print('%d percent sparse' % (zero_percent))
-            # if zero_percent > 50:
-                # print('sparsifying clf.coef_ to free memory')
-                # clf.sparsify()
+            if zero_percent > 50:
+                print('sparsifying clf.coef_ to free memory')
+                clf.sparsify()
         if save_model:
             print('dumpinng the model in %s' % (model_dump_file))
             #joblib.dump(value=clf, filename=model_dump_file, compress=3)
@@ -627,7 +1029,20 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
     if compute_dev:
         print "development results"
         meanDev, medianDev, acc_at_161_dev = loss(devPreds, params.U_dev)
-    dump_preds = True
+    
+    #print 'test'
+    #loss_regression(preds, params.U_test)
+    #print 'test lr'
+    #loss_classification(preds, params.U_test)
+    #print 'test gmm'
+    #loss_clustering(preds, params.U_test)
+    #print 'dev'
+    #loss_regression(devPreds, U_eval=params.U_dev)
+    #print 'dev lr'
+    #loss_classification(devPreds, U_eval=params.U_dev)
+    #print 'dev gmm'
+    #loss_clustering(devPreds, U_eval=params.U_dev)
+    dump_preds = False
     if dump_preds:
         result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '.pkl')
         print "dumping preds (preds, devPreds, params.U_test, params.U_dev, testProbs, devProbs) in " + result_dump_file
@@ -760,8 +1175,8 @@ def asclassification(granularity,  use_mention_dictionary=False, use_sparse_code
             reguls_coefs = [1e-7, 2e-7, 4e-7, 6e-7, 8e-7, 1e-6, 2e-6, 4e-6]
         if penalty == 'none':
             reguls_coefs = [1e-200]
-        #for regul in reguls_coefs:
-        for regul in [params.reguls[params.DATASET_NUMBER - 1]]:
+        for regul in reguls_coefs:
+        #for regul in [params.reguls[params.DATASET_NUMBER - 1]]:
             preds, probs, params.U_test, meanTest, medianTest, acc_at_161_test, meanDev, medianDev, acc_at_161_dev, non_zero_parameters = classify(granularity=granularity, regul=regul, penalty=penalty, fit_intercept=fit_intercept, reload_model=False, save_model=False)
             regul_acc[regul] = acc_at_161_dev
             regul_nonzero[regul] = non_zero_parameters
@@ -2939,7 +3354,7 @@ def run_planteoid():
 if __name__ == '__main__':
 
     initialize(granularity=params.BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=params.do_not_discretize)
-    run_planteoid()
+    #run_planteoid()
     if 'text_classification' in params.models_to_run:
         t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=params.BUCKET_SIZE, use_mention_dictionary=False, binary=params.binary, sublinear=params.sublinear, penalty=params.penalty, fit_intercept=params.fit_intercept, norm=params.norm, use_idf=params.use_idf)
     if 'network_lp_regression_collapsed' in params.models_to_run:
