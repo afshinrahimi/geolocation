@@ -550,7 +550,7 @@ if __name__ == '__main__':
         else:
             #nn_model(X_train, Y_train, X_test, Y_test, complete_prob=complete_prob, regul_coef=_coef, add_hidden=add_hiden, batch_size=batch_size,  n_epochs=n_epochs)
             geo_mlp(X_train, Y_train, X_dev, Y_dev, X_test, Y_test, n_epochs=n_epochs, batch_size=batch_size, init_parameters=None, complete_prob=complete_prob, add_hidden=add_hiden, regul_coef=_coef, save_results=False)
-    #pdb.set_trace()
+    ####pdb.set_trace()
     
 
 
