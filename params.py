@@ -1,5 +1,4 @@
-'''
-Created on 26 Feb 2016
+''' Created on 26 Feb 2016
 
 @author: af
 '''
@@ -12,12 +11,15 @@ if 'text_classification' not in models_to_run and 'network_lp_classification' no
 else:
     do_not_discretize = False
 
-DATASET_NUMBER = 1
+DATASET_NUMBER = 4
 TEXT_ONLY = False
+mention_only = False
 DATA_HOME = '/home/arahimi/datasets'
 DATASETS = ['cmu', 'na', 'world', 'world-final']
 ENCODINGS = ['latin1', 'utf-8', 'utf-8', 'utf-8']
-buckets = [300 , 5000, 2400, 2400]
+buckets = [50 , 2400, 2400, 2400]
+num_classes = [32, 256, 930, 930]
+num_class = num_classes[DATASET_NUMBER-1]
 reguls = [5e-5, 1e-6, 2e-7, 2e-7]
 celeb_thresholds = [5 , 15, 15, 15]
 BUCKET_SIZE = buckets[DATASET_NUMBER - 1]
@@ -72,11 +74,19 @@ factorizers = []
 mention_graph = None
 partitionMethod = 'median'
 partitionMethods = ['kmeans', 'ward', 'average', 'complete', 'median','spectral', 'kmeans', 'meanShift', 'Birch']
+textmodel='lr'
 binary = True
 sublinear=False
-penalty = 'elasticnet'
+penalty = 'l1'
 fit_intercept = True
-norm = 'l2'
+norm = None
 use_idf = True
 node_orders = ['l2h', 'h2l', 'random']
 feature_names = None
+
+dev_mean = []
+dev_median = []
+dev_acc = []
+
+clf = None
+vectorizer = None

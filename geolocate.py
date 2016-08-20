@@ -33,11 +33,12 @@ import numpy as np
 import params
 import utils
 import scipy.sparse as sparse
-import embedding_optimiser as edgexplain
+#import embedding_optimiser as edgexplain
 from sklearn.externals import joblib
 from os import path
 from params import classLatMedian
 import operator
+from sklearn.linear_model.logistic import LogisticRegression
 
 random.seed(0)
 __docformat__ = 'restructedtext en'
@@ -136,6 +137,9 @@ def users(file, type='train', write=False, readText=True):
 def discretize_kdtree(granularity, partitionMethod):
     filename = path.join(params.GEOTEXT_HOME, 'processed_data/' + str(granularity).strip() + '_' + partitionMethod + '_clustered.train')
     print "reading " + filename
+    params.U_train = sorted(params.trainUsers)
+    params.U_test = sorted(params.testUsers)
+    params.U_dev = sorted(params.devUsers)
     allpoints = []
     allpointsMinLat = []
     allpointsMaxLat = []
@@ -148,9 +152,8 @@ def discretize_kdtree(granularity, partitionMethod):
             maxlat = -1000
             minlon = 1000
             maxlon = -1000
-            fields = line.split('\t')
-            points = [locationStr2Float(loc) for loc in set(fields)]
-            
+            fields = set(line.strip().split('\t'))
+            points = [locationStr2Float(loc) for loc in fields]
             lats = [point[0] for point in points]
             lons = [point[1] for point in points]
             minlat = min(lats)
@@ -226,8 +229,8 @@ def descritize_users(n_clusters=100):
     kmeans.fit_transform(points)
     sample_clusters = kmeans.labels_
     cluster_centers = kmeans.cluster_centers_
-    with open(path.join(params.GEOTEXT_HOME, str(n_clusters) + '-kmeans.pkl'), 'wb') as outf:
-        pickle.dump((sample_clusters, cluster_centers), outf)
+    #with open(path.join(params.GEOTEXT_HOME, str(n_clusters) + '-kmeans.pkl'), 'wb') as outf:
+    #    pickle.dump((sample_clusters, cluster_centers), outf)
     params.classLatMedian.clear()
     params.classLonMedian.clear()
     params.categories = []
@@ -244,10 +247,11 @@ def descritize_users(n_clusters=100):
         params.trainClasses[u] = sample_clusters[i]
     for u in params.U_test:
         lat, lon = locationStr2Float(params.testUsers[u]) 
-        params.testClasses[u] = assignClass(lat, lon)
+        params.testClasses[u], dist = assignClass(lat, lon)
     for u in params.U_dev:
         lat, lon = locationStr2Float(params.devUsers[u])
-        params.devClasses[u] = assignClass(lat, lon)
+        params.devClasses[u], dist = assignClass(lat, lon)
+
     
 def descritize_points(points, n_clusters=100):    
     from sklearn.cluster import KMeans
@@ -367,7 +371,7 @@ def error(predicted_label, user):
     lon2 = params.classLonMedian[predicted_label]
     return distance(lat1, lon1, lat2, lon2)         
 
-def loss(preds, U_eval):
+def loss(preds, U_eval, save_results=False, verbose=True):
     if len(preds) != len(U_eval): 
         print "The number of test sample predictions is: " + str(len(preds))
         print "The number of test samples is: " + str(len(U_eval))
@@ -402,8 +406,9 @@ def loss(preds, U_eval):
         distances.append(dd)
 
     acc_at_161 = 100 * len([d for d in distances if d < 161]) / float(len(distances))
-    print "Mean: " + str(int(np.mean(distances))) + " Median: " + str(int(np.median(distances))) + " Acc@161: " + str(int(acc_at_161))
-    print
+    if verbose:
+        logging.info( "Mean: " + str(int(np.mean(distances))) + " Median: " + str(int(np.median(distances))) + " Acc@161: " + str(int(acc_at_161)))
+
     extra_info = False
     if extra_info:
         print "Mean distance from center of us is " + str(int(np.mean(distances_from_center)))
@@ -412,7 +417,10 @@ def loss(preds, U_eval):
         print "Median distance from nyc is " + str(int(np.median(distances_from_nyc)))
         print "Mean distance from la is " + str(int(np.mean(distances_from_la)))
         print "Median distance from la is " + str(int(np.median(distances_from_la)))
-
+    if U_eval[0] == params.U_dev[0] and save_results:
+        params.dev_acc.append(acc_at_161)
+        params.dev_mean.append(np.mean(distances))
+        params.dev_median.append(np.median(distances))
     return np.mean(distances), np.median(distances), acc_at_161
 
 def train_regression_models():
@@ -813,56 +821,44 @@ def loss_classification(preds, U_eval):
     return np.mean(distances), np.median(distances), acc_at_161
 
 
-def lossbycoordinates(coordinates):
-    if len(coordinates) != len(params.testUsers): 
-        print "The number of test sample predictions is: " + str(len(coordinates))
-        print "The number of test samples is: " + str(len(params.testUsers))
-        print "fatal error!"
-        sys.exit()
-    sumMeanDistance = 0
-    sumMedianDistance = 0
+def loss_latlon(U_eval, predicted_coordinates):
     distances = []
-    U = params.testUsers.keys()
-    for i in range(0, len(coordinates)):
-        user = U[i]
-        location = params.userLocation[user].split(',')
-        lat = float(location[0])
-        lon = float(location[1])
-        distances.append(distance(lat, lon, coordinates[i][0], coordinates[i][1]))
-        
-    # print "Average distance from class mean is " + str(averageMeanDistance)
-    # print "Average distance from class median is " + str(averageMedianDistance)
-    print "Mean distance is " + str(np.mean(distances))
-    print "Median distance is " + str(np.median(distances))
+    if U_eval[0] == params.U_dev[0]:
+        dev = True
+        eval_locations = [locationStr2Float(params.devUsers[params.U_dev[i]]) for i in range(0, len(params.U_dev))]
+    elif U_eval[0] == params.U_test[0]:
+        dev = False
+        eval_locations = [locationStr2Float(params.testUsers[params.U_test[i]]) for i in range(0, len(params.U_test))]
     
-    if loss == 'median':
-        return np.median(distances)
-    elif loss == 'mean':
-        return np.mean(distances) 
+    for i in range(0, len(predicted_coordinates)):
+        real_lat, real_lon = eval_locations[i]
+        pred_lat, pred_lon = predicted_coordinates[i]
+        distances.append(distance(real_lat, real_lon, pred_lat, pred_lon))
+        
+
+    acc_at_161 = 100 * len([d for d in distances if d < 161]) / float(len(distances))
+    logging.info( "Mean " + str(int(np.mean(distances))) + ' median ' + str(int(np.median(distances))) + ' acc@161 ' + str(acc_at_161)) 
+    
+     
 
   
 
 
 
 
-def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None, stop_words=None, novectorization=False, vocab=None, save_vectorizer=True):
+def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', binary=False, sublinear_tf=True, min_df=1, max_df=1.0, BuildCostMatrices=False, vectorizer=None, stop_words=None, novectorization=False, vocab=None, save_vectorizer=True, complete_prob=False):
     '''
     read train, dev and test dictionaries and extract textual features using tfidfvectorizer.
     '''
     
-    params.U_train = [u for u in sorted(params.trainUsers)]
-    params.U_test = [u for u in sorted(params.testUsers)]
-    params.U_dev = [u for u in sorted(params.devUsers)]
-
-    
-
     print("%d params.categories" % len(params.categories))
     print()
     # split a training set and a test set
     params.Y_train = np.asarray([params.trainClasses[u] for u in params.U_train])
     params.Y_test = np.asarray([params.testClasses[u] for u in params.U_test])
     params.Y_dev = np.asarray([params.devClasses[u] for u in params.U_dev])
- 
+
+
     logging.info("Extracting features from the training dataset using a sparse vectorizer")
     t0 = time.time()
 
@@ -870,12 +866,12 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
         if use_mention_dictionary:
             print "using @ mention dictionary as vocab..."
             extract_mentions()
-            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=1, max_df=max_df, ngram_range=(1, 1), vocabulary=params.mentions, stop_words=stop_words)
+            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=1, max_df=max_df, ngram_range=(1, 1), vocabulary=params.mentions, stop_words=stop_words, encoding=params.data_encoding)
         else:
             print "mindf: " + str(min_df) + " maxdf: " + str(max_df)
-            vectorizer = TfidfVectorizer(use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=stop_words, vocabulary=vocab, encoding=params.data_encoding)
+            vectorizer = TfidfVectorizer(token_pattern=r'(?u)[#@]*\b\w\w+\b', use_idf=use_idf, norm=norm, binary=binary, sublinear_tf=sublinear_tf, min_df=min_df, max_df=max_df, ngram_range=(1, 1), stop_words=stop_words, vocabulary=vocab, encoding=params.data_encoding)
     print vectorizer
-
+    
     params.X_train = vectorizer.fit_transform([params.trainText[u] for u in params.U_train])
     vectorizer.stop_words_ = None
     if save_vectorizer:
@@ -902,10 +898,30 @@ def feature_extractor(use_mention_dictionary=False, use_idf=True, norm='l2', bin
     duration = time.time() - t0
     print("n_samples: %d, n_features: %d" % params.X_test.shape)
     print()
-            
+    
+    if complete_prob:
+        logging.info('Building complete probability distribution for target values...')
+        Y_train = np.zeros((params.X_train.shape[0], len(params.categories)), dtype='int32')
+        Y_dev = np.zeros((params.X_dev.shape[0], len(params.categories)), dtype='int32')
+        Y_test = np.zeros((params.X_test.shape[0], len(params.categories)), dtype='int32')
+        for i in range(params.Y_dev.shape[0]):
+            Y_dev[i, params.Y_dev[i]] = 1
+        for i in range(params.Y_test.shape[0]):
+            Y_test[i, params.Y_test[i]] = 1
+        for i in range(params.Y_train.shape[0]):
+            Y_train[i, params.Y_train[i]] = 1
+    params.vectorizer = vectorizer 
     return params.X_train, params.Y_train, params.U_train, params.X_dev, params.Y_dev, params.U_dev, params.X_test, params.Y_test, params.U_test, params.categories, params.feature_names
 
-    
+def get_topk_features(label, topk=50):
+    """
+    given a label (str) return the top k important features as a list
+    """
+    topk_feature_indices = np.argsort(params.clf.coef_[label].toarray())[0,-topk:].tolist()[::-1]
+    topk_features = [params.vectorizer.features[i] for i in topk_feature_indices]
+    topk_weights = [params.clf.coef_[label, i] for i in topk_feature_indices]
+    topk_features = [f for f in topk_features if 'user_' not in f]
+    return topk_features, topk_weights  
     
 
     
@@ -919,6 +935,7 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
         # clf = linear_model.LogisticRegression(C=1.0, penalty='l2')
         # alpha = 0.000001
         clf = SGDClassifier(loss='log', alpha=regul, penalty=params.penalty, l1_ratio=0.9, learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=40, fit_intercept=fit_intercept)
+        #clf = LogisticRegression(penalty='l2', dual=False, C = 1.0, fit_intercept=fit_intercept)
         # clf = LabelPropagation(kernel='rbf', gamma=50, n_neighbors=7, alpha=1, max_iter=30, tol=0.001)
         # clf = LabelSpreading(kernel='rbf', gamma=20, n_neighbors=7, alpha=0.2, max_iter=30, tol=0.001)
         # clf = ensemble.AdaBoostClassifier()
@@ -1029,7 +1046,7 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
     if compute_dev:
         print "development results"
         meanDev, medianDev, acc_at_161_dev = loss(devPreds, params.U_dev)
-    
+
     #print 'test'
     #loss_regression(preds, params.U_test)
     #print 'test lr'
@@ -1044,7 +1061,7 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
     #loss_clustering(devPreds, U_eval=params.U_dev)
     dump_preds = False
     if dump_preds:
-        result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '.pkl')
+        result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '-lr.pkl')
         print "dumping preds (preds, devPreds, params.U_test, params.U_dev, testProbs, devProbs) in " + result_dump_file
         with open(result_dump_file, 'wb') as outf:
             pickle.dump((preds, devPreds, params.U_test, params.U_dev, testProbs, devProbs), outf)
@@ -1067,6 +1084,8 @@ def initialize(granularity, write=False, readText=True, reload_init=False, regre
     reload_file = path.join(params.GEOTEXT_HOME + '/init_' + params.DATASETS[params.DATASET_NUMBER - 1] + '_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + '.pkl')
 
     logging.info('reading (user_info.) train, dev and test file and building params.trainUsers, params.devUsers and params.testUsers with their locations')
+    if params.TEXT_ONLY:
+        logging.info('mentions are excluded from features.')
     users(params.trainfile, 'train', write, readText=readText)
     users(params.devfile, 'dev', write, readText=readText)
     users(params.testfile, 'test', write, readText=readText)
@@ -1075,12 +1094,12 @@ def initialize(granularity, write=False, readText=True, reload_init=False, regre
     logging.info("the number of dev" + " users is " + str(len(params.devUsers)))
     
 
-    
+    logging.info('discretization method: ' + params.partitionMethod)
     if not regression:
         if params.partitionMethod == 'median':
             discretize_kdtree(granularity, params.partitionMethod)
         elif params.partitionMethod == 'kmeans':
-            descritize_users(n_clusters=int(float(len(params.trainUsers)) / params.BUCKET_SIZE)) 
+            descritize_users(n_clusters=params.num_class) 
         write_init_info = False
         if write_init_info:
             logging.info('writing init info in %s' % (reload_file))
@@ -1175,8 +1194,8 @@ def asclassification(granularity,  use_mention_dictionary=False, use_sparse_code
             reguls_coefs = [1e-7, 2e-7, 4e-7, 6e-7, 8e-7, 1e-6, 2e-6, 4e-6]
         if penalty == 'none':
             reguls_coefs = [1e-200]
-        for regul in reguls_coefs:
-        #for regul in [params.reguls[params.DATASET_NUMBER - 1]]:
+        #for regul in reguls_coefs:
+        for regul in [params.reguls[params.DATASET_NUMBER - 1]]:
             preds, probs, params.U_test, meanTest, medianTest, acc_at_161_test, meanDev, medianDev, acc_at_161_dev, non_zero_parameters = classify(granularity=granularity, regul=regul, penalty=penalty, fit_intercept=fit_intercept, reload_model=False, save_model=False)
             regul_acc[regul] = acc_at_161_dev
             regul_nonzero[regul] = non_zero_parameters
@@ -1214,7 +1233,7 @@ def extract_mentions(k=0, addTest=False, addDev=False):
     mention_file_address = path.join(params.GEOTEXT_HOME, 'params.mentions.pkl')
     if addDev:
         mention_file_address = mention_file_address + '.dev'
-    RELOAD_mentions = True
+    RELOAD_mentions = False
     if RELOAD_mentions:
         if os.path.exists(mention_file_address):
             print "reading params.mentions from pickle"
@@ -1249,7 +1268,7 @@ def extract_mentions(k=0, addTest=False, addDev=False):
     else:
         params.mentions = mentionsDic.keys()
 
-def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELEBRITY_THRESHOLD=100000, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=False):
+def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior=params.prior, CELEBRITY_THRESHOLD=100000, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=False):
     MULTI_LABEL = False
 
     dongle_nodes = None
@@ -1283,7 +1302,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     if text_prior != 'none':
         logging.info("tex params.prior is " + text_prior)
         # read users and predictions
-        result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '.pkl')
+        result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '-' + params.textmodel + '.pkl')
         t_preds, d_preds, t_users, d_users, t_probs, d_probs = None, None, None, None, None, None
         logging.info("reading the text learner results from " + result_dump_file)
         with open(result_dump_file, 'rb') as inf:
@@ -1454,7 +1473,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior='none', CELE
     l = len(coordinates)
     tenpercent = l / 10
     input_graph_file = path.join(params.GEOTEXT_HOME, 'input_graph_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + '_' + celebrityStr + devStr + text_str + weighted_str)
-    logging.info("writing the input_graph in " + input_graph_file)
+    logging.info("writing the input_graph in " + input_graph_file + ' edges weighted (not binary): ' + str(DIRECT_GRAPH_WEIGHTED))
     with codecs.open(input_graph_file, 'w', 'ascii', buffering=pow(2, 6) * pow(2, 20)) as outf:
         i = 1
         for nodes, w in coordinates.iteritems():
@@ -1519,7 +1538,7 @@ def prepare_adsorption_data_collapsed_networkx(DEVELOPMENT=False, text_prior='no
     if text_prior != 'none':
         logging.info("tex params.prior is " + text_prior)
         # read users and predictions
-        result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '.pkl')
+        result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE)  + '-' + params.textmodel + '.pkl')
         t_preds, d_preds, t_users, d_users, t_probs, d_probs = None, None, None, None, None, None
         logging.info("reading the text learner results from " + result_dump_file)
         with open(result_dump_file, 'rb') as inf:
@@ -1822,11 +1841,11 @@ def LP(weighted=True, normalize_edge=False, remove_celebrities=False, dev=False,
     if params.prior != 'none':
         if params.prior == 'backoff':
             backoff = True
-        elif params.prior == 'params.prior':
+        elif params.prior == 'prior':
             text_direct = True
         elif params.prior == 'dongle':
             dongle = True
-        prior_file_path = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '.pkl')
+        prior_file_path = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE)  + '-' + params.textmodel + '.pkl')
         print "reading params.prior text-based locations from " + prior_file_path
         if os.path.exists(prior_file_path):
             with open(prior_file_path, 'rb') as inf:
@@ -1855,7 +1874,7 @@ def LP(weighted=True, normalize_edge=False, remove_celebrities=False, dev=False,
                         node_location[user] = (lat, lon)
                     user_index += 1
         else:
-            print "params.prior file not found."
+            print "prior file not found."
     for user, loc in params.trainUsers.iteritems():
         lat, lon = locationStr2Float(loc)
         trainLats.append(lat)
@@ -2176,23 +2195,27 @@ def LP_collapsed(weighted=True, normalize_edge=False, remove_celebrities=False, 
     if params.prior != 'none':
         if params.prior == 'backoff':
             backoff = True
-        elif params.prior == 'params.prior':
+        elif params.prior == 'prior':
             text_direct = True
         elif params.prior == 'dongle':
             dongle = True
-        prior_file_path = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '.pkl')
+        prior_file_path = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE)  + '-' + params.textmodel + '.pkl')
         print "reading params.prior text-based locations from " + prior_file_path
         if os.path.exists(prior_file_path):
             with open(prior_file_path, 'rb') as inf:
-                preds, devPreds, params.U_test, params.U_dev, testProbs, devProbs = pickle.load(inf)
+                preds, devPreds, U_test, U_dev, testProbs, devProbs = pickle.load(inf)
+                logging.info('text-based test performance:')
+                loss(preds, U_test)
+                logging.info('text-based dev performance:')
+                loss(devPreds, U_dev)
+
                 if dev:
                     preds = devPreds
-                    params.U_test = params.U_dev
+                    U_test = U_dev
                     testProbs = devProbs
                 test_confidences = testProbs[np.arange(0, preds.shape[0]), preds]
-                loss(preds=preds, U_test=params.U_test)
                 if dongle:
-                    params.mention_graph.add_nodes_from([str(node_id[u]) + '.dongle' for u in params.U_test])
+                    params.mention_graph.add_nodes_from([str(node_id[u]) + '.dongle' for u in U_test])
                 user_index = 0   
                 for user, pred in zip(params.U_test, preds):
                     user_id = node_id[user]
@@ -2226,6 +2249,8 @@ def LP_collapsed(weighted=True, normalize_edge=False, remove_celebrities=False, 
     if project_to_main_users:
         logging.info('projecting the graph into the target user.')
         main_users = node_id.values()
+        if params.prior == 'dongle':
+            main_users += [str(user_id) + '.dongle' for user_id in U_test]
         # params.mention_graph = bipartite.overlap_weighted_projected_graph(params.mention_graph, main_users, jaccard=False)
         #params.mention_graph = collaboration_weighted_projected_graph(params.mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
         params.mention_graph = efficient_collaboration_weighted_projected_graph(params.mention_graph, main_users, weight_str=None, degree_power=1, caller='lp')
@@ -3103,7 +3128,7 @@ def junto_postprocessing(multiple=False, dev=False, method='median', celeb_thres
     else:
         U_eval = params.U_test
         devStr = ''
-    result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + method + '-' + str(params.BUCKET_SIZE) + '.pkl')
+    result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + method + '-' + str(params.BUCKET_SIZE) + '-' + params.textmodel + '.pkl')
     if params.prior != 'none':
         logging.info("reading (preds, devPreds, params.U_test, params.U_dev, testProbs, devProbs) from " + result_dump_file)
         with open(result_dump_file, 'rb') as inf:
@@ -3354,11 +3379,15 @@ def run_planteoid():
 if __name__ == '__main__':
 
     initialize(granularity=params.BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=params.do_not_discretize)
+    #prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior=params.prior, CELEBRITY_THRESHOLD=params.celeb_threshold, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=False)
+    
+    #junto_postprocessing(multiple=False, dev=False, method='median', celeb_threshold=params.celeb_threshold, weighted=False, text_prior=params.prior, postfix='')
+    #sys.exit()
     #run_planteoid()
     if 'text_classification' in params.models_to_run:
         t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=params.BUCKET_SIZE, use_mention_dictionary=False, binary=params.binary, sublinear=params.sublinear, penalty=params.penalty, fit_intercept=params.fit_intercept, norm=params.norm, use_idf=params.use_idf)
     if 'network_lp_regression_collapsed' in params.models_to_run:
-        LP_collapsed(weighted=False, normalize_edge=True, remove_celebrities=True, dev=False, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+        LP_collapsed(weighted=False, normalize_edge=True, remove_celebrities=True, dev=False, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=False)
     if 'network_lp_regression' in params.models_to_run:
         LP(weighted=False, normalize_edge=True, remove_celebrities=True, dev=False, node_order='random')
     if 'network_lp_classification' in params.models_to_run:
@@ -3366,7 +3395,7 @@ if __name__ == '__main__':
     if 'network_lp_classification_edgexplain' in params.models_to_run:
         LP_classification_edgexplain(weighted=True, normalize_edge=False, remove_celebrities=False, dev=True, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=True)
     
-    
+
     # junto_postprocessing(multiple=False, dev=False, text_confidence=1.0, method=params.partitionMethod, params.celeb_threshold=5, weighted=True, text_prior=True)
 
     print str(datetime.now())
