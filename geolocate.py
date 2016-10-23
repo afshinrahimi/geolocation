@@ -90,7 +90,7 @@ def users(file, type='train', write=False, readText=True):
     if readText:
         logging.info("Text is being read.")
         if params.TEXT_ONLY:
-            logging.info('params.mentions are removed.')
+            logging.info('mentions, hashtags and urls are removed.')
     
     # with codecs.open(file, 'r', encoding=params.data_encoding) as inf:
     with gzip.open(file, 'r') as inf:
@@ -105,7 +105,7 @@ def users(file, type='train', write=False, readText=True):
             if readText:
                 text = fields[3].strip()
             if params.TEXT_ONLY and readText:
-                text = re.sub(r"(?:\@|https?\://)\S+", "", text)
+                text = re.sub(r"(?:\@|#|https?\://)\S+", "", text)
             locStr = lat + ',' + lon
             locFloat = (float(lat), float(lon))
             params.userLocation[user] = locStr
@@ -371,7 +371,7 @@ def error(predicted_label, user):
     lon2 = params.classLonMedian[predicted_label]
     return distance(lat1, lon1, lat2, lon2)         
 
-def loss(preds, U_eval, save_results=False, verbose=True):
+def loss(preds, U_eval, save_results=False, verbose=True, error_analysis=False):
     if len(preds) != len(U_eval): 
         print "The number of test sample predictions is: " + str(len(preds))
         print "The number of test samples is: " + str(len(U_eval))
@@ -421,6 +421,25 @@ def loss(preds, U_eval, save_results=False, verbose=True):
         params.dev_acc.append(acc_at_161)
         params.dev_mean.append(np.mean(distances))
         params.dev_median.append(np.median(distances))
+    
+    if error_analysis:
+        logging.info('error analysis, dumping ...')
+        min_error_distance_for_anaysis = sorted(distances)[-1000]
+        with codecs.open('error_analysis.txt', 'w', encoding=params.data_encoding) as fout:
+            for i in range(len(preds)):
+                dd = distances[i]
+                if dd < min_error_distance_for_anaysis:
+                    continue
+                u = U_eval[i]
+                real_location = params.userLocation[u]
+                predicted_location = user_location[u]
+                if U_eval[0] == params.U_dev[0]:
+                    text = params.devText[u]
+                elif U_eval[0] == params.U_test[0]:
+                    text = params.testText[u]
+                line = [u, str(dd), real_location, str(predicted_location[0])+','+str(predicted_location[1]), text]
+                fout.write(('\t'.join(line)+'\n').decode(params.data_encoding))
+        
     return np.mean(distances), np.median(distances), acc_at_161
 
 def train_regression_models():
@@ -2259,7 +2278,7 @@ def LP_collapsed(weighted=True, normalize_edge=False, remove_celebrities=False, 
     logging.info("Edge number: " + str(params.mention_graph.number_of_edges()))
     logging.info("Node number: " + str(params.mention_graph.number_of_nodes()))
     # results[str(project_to_main_users)] = params.mention_graph.degree().values()
-    # return
+    return
     remove_betweeners = False
     if remove_betweeners:
         print("computing betweenness centrality of all nodes, takes a long time, sorry!")
@@ -3325,9 +3344,9 @@ def weighted_median(values, weights):
     return values_sorted[median_index]
 
 def run_planteoid():
-    t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=params.BUCKET_SIZE, use_mention_dictionary=False, binary=params.binary, sublinear=params.sublinear, penalty=params.penalty, fit_intercept=params.fit_intercept, norm=params.norm, use_idf=params.use_idf)
+    params.X_train, params.Y_train, params.U_train, params.X_dev, params.Y_dev, params.U_dev, params.X_test, params.Y_test, params.U_test, params.categories, params.feature_names = feature_extractor(norm=params.norm, use_mention_dictionary=None, min_df=10, max_df=0.2, stop_words='english', binary=params.binary, sublinear_tf=params.sublinear, vocab=None, use_idf=params.use_idf, save_vectorizer=False)
     LP_collapsed(weighted=False, normalize_edge=True, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
-    sys.path.append(path.abspath('../planteoid'))
+    sys.path.append(path.abspath('../planetoid'))
     import argparse
     from scipy import sparse
     import numpy as np
@@ -3365,7 +3384,38 @@ def run_planteoid():
     planteoid_graph = defaultdict(list)
     for node, id in node_id.iteritems():
         planteoid_graph[id] = params.mention_graph[id].keys()
+    x = csr_matrix(params.X_train, dtype=np.float32)
+    y = Y_train
+    tx = csr_matrix(params.X_dev, dtype=np.float32)
+    ty = Y_dev
+    allx = sparse.vstack([x, tx])
+    ally = np.vstack((y, ty))
+    graph = planteoid_graph
+    test_indices = list(range(x.shape[0], allx.shape[0]))
+    dataset_name = params.DATASETS[params.DATASET_NUMBER - 1]
+    planteoid_data = '/home/arahimi/git/planetoid2/planetoid/data'
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.allx'), 'wb') as fout:
+        pickle.dump(allx, fout)
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.x'), 'wb') as fout:
+        pickle.dump(x, fout)
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.tx'), 'wb') as fout:
+        pickle.dump(tx, fout)
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.ally'), 'wb') as fout:
+        pickle.dump(ally, fout)
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.y'), 'wb') as fout:
+        pickle.dump(y, fout)
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.ty'), 'wb') as fout:
+        pickle.dump(ty, fout)
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.graph'), 'wb') as fout:
+        pickle.dump(graph, fout)
+    with open(path.join(planteoid_data, 'ind.' + dataset_name + '.test.index'), 'w') as fout:
+        for _ in test_indices:
+            fout.write(str(_) + '\n')
     
+    
+
+    
+    pdb.set_trace()
     """build the model and start training"""
     m = model.model(args)
     m.add_data(csr_matrix(params.X_train, dtype=np.float32), csr_matrix(params.X_dev, dtype=np.float32), Y_train, Y_dev, planteoid_graph)
@@ -3375,6 +3425,109 @@ def run_planteoid():
     loss(preds, U_eval=params.U_dev)
     pdb.set_trace()
 
+def run_planetoid():
+    params.X_train, params.Y_train, params.U_train, params.X_dev, params.Y_dev, params.U_dev, params.X_test, params.Y_test, params.U_test, params.categories, params.feature_names = feature_extractor(norm=params.norm, use_mention_dictionary=None, min_df=10, max_df=0.2, stop_words='english', binary=params.binary, sublinear_tf=params.sublinear, vocab=None, use_idf=params.use_idf, save_vectorizer=False)
+    LP_collapsed(weighted=False, normalize_edge=True, remove_celebrities=True, dev=True, project_to_main_users=True, node_order='random', remove_mentions_with_degree_one=True)
+    sys.path.append(path.abspath('../planetoid2/planetoid'))
+    import argparse
+    from scipy import sparse
+    import numpy as np
+    import random
+    from collections import defaultdict as dd
+    from ind_model import ind_model as model
+    """set the arguments"""
+    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--learning_rate', help = 'learning rate for supervised loss', type = float, default = 0.1)
+    parser.add_argument('--embedding_size', help = 'embedding dimensions', type = int, default = len(params.categories) * 4)
+    parser.add_argument('--window_size', help = 'window size in random walk sequences', type = int, default = 2)
+    parser.add_argument('--path_size', help = 'length of random walk sequences', type = int, default = 10)
+    parser.add_argument('--batch_size', help = 'batch size for supervised loss', type = int, default = 1000)
+    parser.add_argument('--g_batch_size', help = 'batch size for graph context loss', type = int, default = 1000)
+    parser.add_argument('--g_sample_size', help = 'batch size for label context loss', type = int, default = 100)
+    parser.add_argument('--neg_samp', help = 'negative sampling rate; zero means using softmax', type = int, default = 0)
+    parser.add_argument('--g_learning_rate', help = 'learning rate for unsupervised loss', type = float, default = 1e-3)
+    parser.add_argument('--model_file', help = 'filename for saving models', type = str, default = 'ind.model')
+    parser.add_argument('--use_feature', help = 'whether use input features', type = bool, default = True)
+    parser.add_argument('--update_emb', help = 'whether update embedding when optimizing supervised loss', type = bool, default = True)
+    parser.add_argument('--layer_loss', help = 'whether incur loss on hidden layers', type = bool, default = True)
+    args = parser.parse_args()
+    
+    Y_train = np.zeros((len(params.trainUsers), len(params.categories)), dtype = np.int32)
+    Y_dev = np.zeros((len(params.devUsers), len(params.categories)), dtype = np.int32)
+    Y_test = np.zeros((len(params.testUsers), len(params.categories)), dtype = np.int32)
+    for i in range(len(params.trainUsers)):
+        Y_train[i, params.Y_train[i]] = 1
+    for i in range(len(params.devUsers)):
+        Y_dev[i, params.Y_dev[i]] = 1
+    for i in range(len(params.testUsers)):
+        Y_test[i, params.Y_test[i]] = 1
+    
+    U_eval = params.U_dev
+    U_all = params.U_train + U_eval
+    assert len(U_all) == len(params.U_train) + len(U_eval), "duplicate user problem"
+    idx = range(len(U_all))
+    node_id = dict(zip(U_all, idx))
+    planteoid_graph = defaultdict(list)
+    for node, id in node_id.iteritems():
+        planteoid_graph[id] = params.mention_graph[id].keys()
+    x = csr_matrix(params.X_train, dtype=np.float32)
+    y = Y_train
+    tx = csr_matrix(params.X_dev, dtype=np.float32)
+    ty = Y_dev
+    allx = sparse.vstack([x, tx])
+    ally = np.vstack((y, ty))
+    graph = planteoid_graph
+    test_indices = list(range(x.shape[0], allx.shape[0]))
+    dataset_name = params.DATASETS[params.DATASET_NUMBER - 1]
+    write_to_pickle = False
+    if write_to_pickle:
+        planteoid_data = '/home/arahimi/git/planetoid2/planetoid/data'
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.allx'), 'wb') as fout:
+            pickle.dump(allx, fout)
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.x'), 'wb') as fout:
+            pickle.dump(x, fout)
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.tx'), 'wb') as fout:
+            pickle.dump(tx, fout)
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.ally'), 'wb') as fout:
+            pickle.dump(ally, fout)
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.y'), 'wb') as fout:
+            pickle.dump(y, fout)
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.ty'), 'wb') as fout:
+            pickle.dump(ty, fout)
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.graph'), 'wb') as fout:
+            pickle.dump(graph, fout)
+        with open(path.join(planteoid_data, 'ind.' + dataset_name + '.test.index'), 'w') as fout:
+            for _ in test_indices:
+                fout.write(str(_) + '\n')
+    
+    
+
+    def comp_accu(tpy, ty):
+        return (np.argmax(tpy, axis = 1) == np.argmax(ty, axis = 1)).sum() * 1.0 / tpy.shape[0]
+    
+    m = model(args)                                                 # initialize the model
+    m.add_data(x, y, allx, graph)                                   # add data
+    m.build()                                                       # build the model
+    m.init_train(init_iter_label = 10000, init_iter_graph = 400)    # pre-training
+    iter_cnt, max_accu = 0, 0
+    max_mean, max_median, max_acc = 0, 0, 0
+    while True:
+        m.step_train(max_iter = 1, iter_graph = 0.1, iter_inst = 1, iter_label = 0) # perform a training step
+        tpy = m.predict(tx)            # predict the dev set
+        preds = np.argmax(tpy, axis = 1)                    
+        _mean, _median, _acc = loss(preds, U_eval=params.U_dev)
+        if _acc > max_acc:
+            max_acc = _acc
+            max_mean = _mean
+            max_median = _median                     
+        accu = comp_accu(tpy, ty)                                                   # compute the accuracy on the dev set
+        print iter_cnt, accu, max_accu
+        iter_cnt += 1
+        if accu > max_accu:
+            m.store_params()                                                        # store the model if better result is obtained
+            max_accu = max(max_accu, accu)
+        logging.info(str(max_mean) +' ' +  str(max_median) + ' ' + str(max_acc))
     
 if __name__ == '__main__':
 
@@ -3384,8 +3537,10 @@ if __name__ == '__main__':
     #junto_postprocessing(multiple=False, dev=False, method='median', celeb_threshold=params.celeb_threshold, weighted=False, text_prior=params.prior, postfix='')
     #sys.exit()
     #run_planteoid()
+    #run_planetoid()
     if 'text_classification' in params.models_to_run:
         t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=params.BUCKET_SIZE, use_mention_dictionary=False, binary=params.binary, sublinear=params.sublinear, penalty=params.penalty, fit_intercept=params.fit_intercept, norm=params.norm, use_idf=params.use_idf)
+    pdb.set_trace()    
     if 'network_lp_regression_collapsed' in params.models_to_run:
         LP_collapsed(weighted=False, normalize_edge=True, remove_celebrities=True, dev=False, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=False)
     if 'network_lp_regression' in params.models_to_run:
