@@ -953,7 +953,7 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
         # clf = LinearSVC(multi_class='ovr', class_weight='auto', C=1.0, loss='l2', penalty='l2', dual=False, tol=1e-3)
         # clf = linear_model.LogisticRegression(C=1.0, penalty='l2')
         # alpha = 0.000001
-        clf = SGDClassifier(loss='log', alpha=regul, penalty=params.penalty, l1_ratio=0.9, learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=40, fit_intercept=fit_intercept)
+        clf = SGDClassifier(loss='log', alpha=regul, penalty=params.penalty, l1_ratio=0.9, learning_rate='optimal', n_iter=10, shuffle=False, n_jobs=15, fit_intercept=fit_intercept)
         #clf = LogisticRegression(penalty='l2', dual=False, C = 1.0, fit_intercept=fit_intercept)
         # clf = LabelPropagation(kernel='rbf', gamma=50, n_neighbors=7, alpha=1, max_iter=30, tol=0.001)
         # clf = LabelSpreading(kernel='rbf', gamma=20, n_neighbors=7, alpha=0.2, max_iter=30, tol=0.001)
@@ -1007,7 +1007,7 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
             print('dumpinng the model in %s' % (model_dump_file))
             #joblib.dump(value=clf, filename=model_dump_file, compress=3)
             with open(model_dump_file, 'wb') as outf:
-                pickle.dump(clf, outf)
+                pickle.dump((clf, params.vectorizer), outf)
     if hasattr(clf, 'coef_'):
         non_zero_parameters = csr_matrix(clf.coef_).nnz
     else:
@@ -1078,7 +1078,7 @@ def classify(granularity=10, DSExpansion=False, DSModification=False, compute_de
     #loss_classification(devPreds, U_eval=params.U_dev)
     #print 'dev gmm'
     #loss_clustering(devPreds, U_eval=params.U_dev)
-    dump_preds = False
+    dump_preds = True
     if dump_preds:
         result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '-lr.pkl')
         print "dumping preds (preds, devPreds, params.U_test, params.U_dev, testProbs, devProbs) in " + result_dump_file
@@ -1353,7 +1353,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior=params.prior
             for i in range(0, len(params.U_test)):
                 outf.write(str(i + len(params.U_train)) + '\t' + params.U_test[i] + '\n')
 
-    seed_file = path.join(params.GEOTEXT_HOME, 'seeds_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + devStr + text_str + weighted_str)
+    seed_file = path.join(params.GEOTEXT_HOME, 'seeds_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + devStr + text_str + weighted_str + '-' + params.textmodel)
     logging.info("writing seeds in " + seed_file)
     with codecs.open(seed_file, 'w', 'ascii') as outf:
         for i in range(0, len(params.U_train)):
@@ -1491,7 +1491,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior=params.prior
     logging.info("The number of edges is " + str(len(coordinates)))
     l = len(coordinates)
     tenpercent = l / 10
-    input_graph_file = path.join(params.GEOTEXT_HOME, 'input_graph_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + '_' + celebrityStr + devStr + text_str + weighted_str)
+    input_graph_file = path.join(params.GEOTEXT_HOME, 'input_graph_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + '_' + celebrityStr + devStr + text_str + weighted_str+ '-' + params.textmodel )
     logging.info("writing the input_graph in " + input_graph_file + ' edges weighted (not binary): ' + str(DIRECT_GRAPH_WEIGHTED))
     with codecs.open(input_graph_file, 'w', 'ascii', buffering=pow(2, 6) * pow(2, 20)) as outf:
         i = 1
@@ -1519,7 +1519,7 @@ def prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior=params.prior
     us = set(u1s + u2s)
     logging.info("the number of disconnected users is " + str(len(U_all) - len(us)))
     logging.info("the number of disconnected test users is " + str(len(u_unknown) - len([a for a in us if a >= len(params.U_train)])))
-    output_file = path.join(params.GEOTEXT_HOME, 'label_prop_output_' + params.DATASETS[params.DATASET_NUMBER - 1] + '_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + '_' + str(params.celeb_threshold) + devStr + text_str + weighted_str)
+    output_file = path.join(params.GEOTEXT_HOME, 'label_prop_output_' + params.DATASETS[params.DATASET_NUMBER - 1] + '_' + params.partitionMethod + '_' + str(params.BUCKET_SIZE) + '_' + str(params.celeb_threshold) + devStr + text_str + weighted_str+ '-' + params.textmodel)
     logging.info("output file: " + output_file)
     # logging.info(str(disconnected_us))
 
@@ -3532,15 +3532,13 @@ def run_planetoid():
 if __name__ == '__main__':
 
     initialize(granularity=params.BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=params.do_not_discretize)
-    #prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior=params.prior, CELEBRITY_THRESHOLD=params.celeb_threshold, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=False)
-    
-    #junto_postprocessing(multiple=False, dev=False, method='median', celeb_threshold=params.celeb_threshold, weighted=False, text_prior=params.prior, postfix='')
-    #sys.exit()
+    #prepare_adsorption_data_collapsed(DEVELOPMENT=False, text_prior=params.prior, CELEBRITY_THRESHOLD=params.celeb_threshold, build_networkx_graph=False, DIRECT_GRAPH_WEIGHTED=True)
+    junto_postprocessing(multiple=False, dev=False, method='median', celeb_threshold=params.celeb_threshold, weighted=True, text_prior=params.prior, postfix='-mlp')
+    sys.exit()
     #run_planteoid()
     #run_planetoid()
     if 'text_classification' in params.models_to_run:
         t_mean, t_median, t_acc, d_mean, d_median, d_acc = asclassification(granularity=params.BUCKET_SIZE, use_mention_dictionary=False, binary=params.binary, sublinear=params.sublinear, penalty=params.penalty, fit_intercept=params.fit_intercept, norm=params.norm, use_idf=params.use_idf)
-    pdb.set_trace()    
     if 'network_lp_regression_collapsed' in params.models_to_run:
         LP_collapsed(weighted=False, normalize_edge=True, remove_celebrities=True, dev=False, project_to_main_users=False, node_order='random', remove_mentions_with_degree_one=False)
     if 'network_lp_regression' in params.models_to_run:

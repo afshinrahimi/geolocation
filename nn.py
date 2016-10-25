@@ -1,4 +1,5 @@
 '''
+
 Created on 22 Apr 2016
 
 @author: af
@@ -386,6 +387,10 @@ def read_1m_words(input_file='/home/arahimi/datasets/1mwords/count_1w.txt'):
 
 def nearest_neighbours(vocab, embs, k):
     from sklearn.neighbors import NearestNeighbors
+    from sklearn.preprocessing import normalize
+    from sklearn.preprocessing import MinMaxScaler
+    scaler = MinMaxScaler(feature_range=(0, 1), copy=False)
+
     #now read dare json files
     json_file = '/home/arahimi/datasets/dare/geodare.cleansed.filtered.json'
     json_objs = []
@@ -423,11 +428,17 @@ def nearest_neighbours(vocab, embs, k):
         itemsplit = dialect.split()
         extended_dialect_items.extend(itemsplit)
         dialect_item_indices = [vocab.index(item) for item in extended_dialect_items if item in vocabset]
-        dialect_emb = np.ones((1, 300))
+        dialect_emb = np.ones((1, embs.shape[1]))
         for _index in dialect_item_indices:
-            dialect_emb *= embs[_index, :]
+            dialect_emb *= embs[_index, :].reshape((1, embs.shape[1]))
+        #dialect_emb = dialect_emb / len(dialect_item_indices)
         dialect_embs[dialect] = dialect_emb
     target_X = np.vstack(tuple(dialect_embs.values()))
+    #logging.info('MinMax Scaling each dimension to fit between 0,1')
+    #target_X = scaler.fit_transform(target_X)
+    #logging.info('l1 normalizing embedding samples')
+    #target_X = normalize(target_X, norm='l1', axis=1, copy=False)
+
     #target_indices = np.asarray(text_index.values())
     #target_X = embs[target_indices, :]
     logging.info('computing nearest neighbours of dialects')
@@ -483,13 +494,13 @@ def calc_recall(word_nbrs, k, freqwords=set()):
         else:
             print('this dialect does not exist: ' + dialect)
     print('recall at ' + str(k))
-    print(len(recalls))
-    print(np.mean(recalls))
-    print(np.median(recalls))
-    print(info)
+    #print(len(recalls))
+    #print(np.mean(recalls))
+    #print(np.median(recalls))
+    #print(info)
     sum_support = sum([inf[1] for inf in info])
     weighted_average_recall = sum([inf[1] * inf[2] for inf in info]) / sum_support
-    print('weighted average recall: ' + str(weighted_average_recall))
+    #print('weighted average recall: ' + str(weighted_average_recall))
     print('micro recall :' + str(float(total_true_positive) * 100 / total_positive))
 
 def geo_mlp(X_train, Y_train, X_dev, Y_dev, X_test, Y_test, n_epochs=10, batch_size=1000, init_parameters=None, complete_prob=True, add_hidden=False, regul_coefs=[5e-5, 5e-5], save_results=True, hidden_layer_size=None, drop_out=False, drop_out_coefs=[0.5, 0.5]):
@@ -646,10 +657,20 @@ def geo_mlp(X_train, Y_train, X_dev, Y_dev, X_test, Y_test, n_epochs=10, batch_s
     
     logging.info('***************** final results based on best validation **************')
     logging.info('dev results')
-    mean, median, acc_at_161 = geolocate.loss(f_predict(X_dev), U_eval=params.U_dev, save_results=False, error_analysis=False)
+    devPreds = f_predict(X_dev)
+    testPreds = f_predict(X_test)
+    devProbs = f_predict_proba(X_dev)
+    testProbs = f_predict_proba(X_test)
+    mean, median, acc_at_161 = geolocate.loss(devPreds, U_eval=params.U_dev, save_results=False, error_analysis=False)
     logging.info('test results')
-    mean, median, acc_at_161 = geolocate.loss(f_predict(X_test), U_eval=params.U_test, save_results=False )
-    
+    mean, median, acc_at_161 = geolocate.loss(testPreds, U_eval=params.U_test, save_results=False )
+    dump_preds = True
+    if dump_preds:
+        result_dump_file = path.join(params.GEOTEXT_HOME, 'results-' + params.DATASETS[params.DATASET_NUMBER - 1] + '-' + params.partitionMethod + '-' + str(params.BUCKET_SIZE) + '-mlp.pkl')
+        print "dumping preds (preds, devPreds, params.U_test, params.U_dev, testProbs, devProbs) in " + result_dump_file
+        with open(result_dump_file, 'wb') as outf:
+            pickle.dump((testPreds, devPreds, params.U_test, params.U_dev, testProbs, devProbs), outf)
+
     if add_hidden:
         pass
         #X_train_embs = f_get_embeddings(X_train)
@@ -685,22 +706,30 @@ def dialect_eval(embs_file='./word-embs-10000-1e-06-1e-06.pkl.gz'):
     logging.info('loading vocab, embs from ' + embs_file)
     with gzip.open(embs_file, 'rb') as fin:
         vocab, embs = pickle.load(fin)
-    vocabset = set(vocab)
-    logging.info('loading w2v embeddings...')
-    word2vec_model = load_word2vec('/home/arahimi/GoogleNews-vectors-negative300.bin.gz')
-    w2v_vocab = [v for v in word2vec_model.vocab if v in vocabset]
-    logging.info('vstacking word vectors into a single matrix...')
-    w2v_embs = np.vstack(tuple([np.asarray(word2vec_model[v]).reshape((1,300)) for v in w2v_vocab]))
-    embs = w2v_embs
-    vocab = w2v_vocab 
-            
+    word2vec = False
+    lr = False
+    if word2vec:
+        vocabset = set(vocab)
+        logging.info('loading w2v embeddings...')
+        word2vec_model = load_word2vec('/home/arahimi/GoogleNews-vectors-negative300.bin.gz')
+        w2v_vocab = [v for v in word2vec_model.vocab if v in vocabset]
+        logging.info('vstacking word vectors into a single matrix...')
+        w2v_embs = np.vstack(tuple([np.asarray(word2vec_model[v]).reshape((1,300)) for v in w2v_vocab]))
+        embs = w2v_embs
+        vocab = w2v_vocab 
+    elif lr:
+        with open('/home/arahimi/datasets/na-original/model-na-original-median-2400-1e-06.pkl', 'rb') as fout:
+            clf, vectorizer = pickle.load(fout)
+        X_lr = vectorizer.transform(vocab)
+        lr_embs = clf.predict_proba(X_lr) 
+        embs = lr_embs       
     from sklearn.preprocessing import normalize
     from sklearn.preprocessing import MinMaxScaler
     scaler = MinMaxScaler(feature_range=(0, 1), copy=False)
     logging.info('MinMax Scaling each dimension to fit between 0,1')
-    embs = scaler.fit_transform(embs)
+    #embs = scaler.fit_transform(embs)
     logging.info('l1 normalizing embedding samples')
-    embs = normalize(embs, norm='l1', axis=1, copy=False)
+    #embs = normalize(embs, norm='l1', axis=1, copy=False)
     word_nbrs = nearest_neighbours(vocab, embs, k=50000)
     wordfreqs = read_1m_words()
     topwords = [wordfreq[0] for wordfreq in wordfreqs]
@@ -804,7 +833,8 @@ def error_analysis_text_correction():
 
 if __name__ == '__main__':
     #error_analysis_text_correction()
-    #dialect_eval()
+    dialect_eval()
+    sys.exit()
     regression = False
     do_tune = False
     add_hiden = True
