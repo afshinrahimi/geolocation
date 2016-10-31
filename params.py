@@ -5,8 +5,8 @@
 from os import path
 all_models = ['text_classification', 'network_lp_regression', 'network_lp_regression_collapsed', 'network_lp_classification', 'network_lp_classification_edgexplain']
 models_to_run = ['text_classification']
-prior = 'dongle'
-textmodel='mlp'
+prior = 'none'
+textmodel='lr'
 if 'text_classification' not in models_to_run and 'network_lp_classification' not in models_to_run and 'network_lp_classification_edgexplain' not in models_to_run and prior=='none':
     do_not_discretize = True
 else:

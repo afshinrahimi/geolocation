@@ -442,7 +442,7 @@ def nearest_neighbours(vocab, embs, k):
     #target_indices = np.asarray(text_index.values())
     #target_X = embs[target_indices, :]
     logging.info('computing nearest neighbours of dialects')
-    nbrs = NearestNeighbors(n_neighbors=k, algorithm='auto', leaf_size=100).fit(embs)
+    nbrs = NearestNeighbors(n_neighbors=k, algorithm='auto', leaf_size=10).fit(embs)
     distances, indices = nbrs.kneighbors(target_X)
     word_nbrs = [(dialect_embs.keys()[i], vocab[indices[i, j]]) for i in range(target_X.shape[0]) for j in range(k)]
     word_neighbours = defaultdict(list)
@@ -499,7 +499,7 @@ def calc_recall(word_nbrs, k, freqwords=set()):
     #print(np.median(recalls))
     #print(info)
     sum_support = sum([inf[1] for inf in info])
-    weighted_average_recall = sum([inf[1] * inf[2] for inf in info]) / sum_support
+    #weighted_average_recall = sum([inf[1] * inf[2] for inf in info]) / sum_support
     #print('weighted average recall: ' + str(weighted_average_recall))
     print('micro recall :' + str(float(total_true_positive) * 100 / total_positive))
 
@@ -702,12 +702,13 @@ def load_word2vec(fname):
     return word2vec
 
 
-def dialect_eval(embs_file='./word-embs-10000-1e-06-1e-06.pkl.gz'):
+def dialect_eval(embs_file='./word-embs-10000-1e-06-1e-06.pkl.gz', word2vec=None, lr=None):
+    logging.info('word2vec: ' + str(word2vec) + " lr: " + str(lr))
     logging.info('loading vocab, embs from ' + embs_file)
     with gzip.open(embs_file, 'rb') as fin:
         vocab, embs = pickle.load(fin)
-    word2vec = False
-    lr = False
+    vocab_size = len(vocab)
+    print('vocab size: ' + str(vocab_size))
     if word2vec:
         vocabset = set(vocab)
         logging.info('loading w2v embeddings...')
@@ -730,13 +731,14 @@ def dialect_eval(embs_file='./word-embs-10000-1e-06-1e-06.pkl.gz'):
     #embs = scaler.fit_transform(embs)
     logging.info('l1 normalizing embedding samples')
     #embs = normalize(embs, norm='l1', axis=1, copy=False)
-    word_nbrs = nearest_neighbours(vocab, embs, k=50000)
+    word_nbrs = nearest_neighbours(vocab, embs, k=int(len(vocab)))
     wordfreqs = read_1m_words()
     topwords = [wordfreq[0] for wordfreq in wordfreqs]
     freqwords = set(topwords[0:50000])
     
-
-    for r_at_k in [1, 10, 100, 1000, 10000]:
+    percents = [0.0005, 0.001, 0.002, 0.005, 0.01, 0.02, 0.05]
+    percents = [int(p* vocab_size) for p in percents]
+    for r_at_k in percents:
         calc_recall(word_nbrs=word_nbrs, k=r_at_k, freqwords=freqwords)
 
 def retrieve_location_from_coordinates(points):
@@ -833,7 +835,7 @@ def error_analysis_text_correction():
 
 if __name__ == '__main__':
     #error_analysis_text_correction()
-    dialect_eval()
+    dialect_eval(word2vec=None, lr=True)
     sys.exit()
     regression = False
     do_tune = False
