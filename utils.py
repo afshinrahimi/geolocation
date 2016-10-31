@@ -220,9 +220,10 @@ def tsne_allcities():
     plt.axis('off')
     plt.show()
     #plt.savefig('allcities-tsne.pgf')   
+
 if __name__ == '__main__':
     #tsne1()
     #tsne_cities()
     #tsne_states()
     #tsne_citystates() 
-    tsne_allcities()  
+    #tsne_allcities()  
