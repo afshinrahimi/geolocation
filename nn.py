@@ -65,7 +65,191 @@ class SparseInputDropoutLayer(DropoutLayer):
                                                dtype=input.dtype)
 
 
+class MLP():
+    def __init__(self, 
+                 n_epochs=10, 
+                 batch_size=1000, 
+                 init_parameters=None, 
+                 complete_prob=False, 
+                 add_hidden=True, 
+                 regul_coefs=[5e-5, 5e-5], 
+                 save_results=False, 
+                 hidden_layer_size=None, 
+                 drop_out=False, 
+                 drop_out_coefs=[0.5, 0.5]):
+        self.n_epochs = n_epochs
+        self.batch_size = batch_size
+        self.init_parameters = init_parameters
+        self.complete_prob = complete_prob
+        self.add_hidden = add_hidden
+        self.regul_ceofs = regul_coefs
+        self.save_results = save_results
+        self.hidden_layer_size = hidden_layer_size
+        self.drop_out = drop_out
+        self.drop_out_coefs = drop_out_coefs
 
+    def fit(self, X_train, Y_train, X_dev, Y_dev):
+        logging.info('building the network...' + ' hidden:' + str(self.add_hidden))
+        in_size = X_train.shape[1]
+        best_params = None
+        best_val_acc = 0.0
+        drop_out_hid, drop_out_in = self.drop_out_coefs
+        if self.complete_prob:
+            out_size = Y_train.shape[1]
+        else:
+            out_size = len(set(Y_train.tolist()))
+        
+        if self.hidden_layer_size:
+            pass
+        else:
+            hidden_layer_size = min(5 * out_size, int(in_size / 20))
+        logging.info('input layer size: %d, hidden layer size: %d, output layer size: %d'  %(X_train.shape[0], hidden_layer_size, out_size))
+        # Prepare Theano variables for inputs and targets
+        if not sp.sparse.issparse(X_train):
+            logging.info('input matrix is not sparse!')
+            self.X_sym = T.matrix()
+        else:
+            self.X_sym = S.csr_matrix(name='inputs', dtype='float32')
+        
+        if self.complete_prob:
+            self.y_sym = T.matrix()
+        else:
+            self.y_sym = T.ivector()    
+        
+        l_in = lasagne.layers.InputLayer(shape=(None, in_size),
+                                         input_var=self.X_sym)
+        
+        if self.drop_out:
+            l_in = lasagne.layers.dropout(l_in, p=drop_out_in)
+    
+        if self.add_hidden:
+            if not sp.sparse.issparse(X_train):
+                l_hid1 = lasagne.layers.DenseLayer(
+                    l_in, num_units=hidden_layer_size,
+                    nonlinearity=lasagne.nonlinearities.rectify,
+                    W=lasagne.init.GlorotUniform())
+            else:
+                l_hid1 = SparseInputDenseLayer(
+                    l_in, num_units=hidden_layer_size,
+                    nonlinearity=lasagne.nonlinearities.rectify,
+                    W=lasagne.init.GlorotUniform())
+            if self.drop_out:
+                self.l_hid1 = lasagne.layers.dropout(l_hid1, drop_out_hid)
+            
+            self.l_out = lasagne.layers.DenseLayer(
+            l_hid1, num_units=out_size,
+            nonlinearity=lasagne.nonlinearities.softmax)
+        else:
+            if not sp.sparse.issparse(X_train):
+                self.l_out = lasagne.layers.DenseLayer(
+                    l_in, num_units=out_size,
+                    nonlinearity=lasagne.nonlinearities.softmax)
+                if self.drop_out:
+                    l_hid1 = lasagne.layers.dropout(l_hid1, drop_out_hid)
+            else:
+                self.l_out = SparseInputDenseLayer(
+                    l_in, num_units=out_size,
+                    nonlinearity=lasagne.nonlinearities.softmax)
+                if self.drop_out:
+                    l_hid1 = SparseInputDropoutLayer(l_hid1, drop_out_hid)
+        
+        
+    
+        if self.add_hidden:
+            self.embedding = lasagne.layers.get_output(l_hid1, self.X_sym, deterministic=True)
+            self.f_get_embeddings = theano.function([self.X_sym], self.embedding)
+        self.output = lasagne.layers.get_output(self.l_out, self.X_sym, deterministic=True)
+        pred = self.output.argmax(-1)
+        loss = lasagne.objectives.categorical_crossentropy(self.output, self.y_sym)
+        #loss = lasagne.objectives.multiclass_hinge_loss(output, y_sym)
+        loss = loss.mean()
+        
+        
+        l1_share_out = 0.5
+        l1_share_hid = 0.5
+        regul_coef_out, regul_coef_hid = self.regul_coefs
+        logging.info('regul coefficient for output and hidden layers are ' + str(self.regul_coefs))
+        l1_penalty = lasagne.regularization.regularize_layer_params(self.l_out, l1) * regul_coef_out * l1_share_out
+        l2_penalty = lasagne.regularization.regularize_layer_params(self.l_out, l2) * regul_coef_out * (1-l1_share_out)
+        if self.add_hidden:
+            l1_penalty += lasagne.regularization.regularize_layer_params(l_hid1, l1) * regul_coef_hid * l1_share_hid
+            l2_penalty += lasagne.regularization.regularize_layer_params(l_hid1, l2) * regul_coef_hid * (1-l1_share_hid)
+        loss = loss + l1_penalty + l2_penalty
+    
+        if self.complete_prob:
+            self.y_sym_one_hot = self.y_sym.argmax(-1)
+            self.acc = T.mean(T.eq(self.pred, self.y_sym_one_hot))
+        else:
+            acc = T.mean(T.eq(pred, self.y_sym))
+        if self.init_parameters:
+            lasagne.layers.set_all_param_values(self.l_out, self.init_parameters)
+        parameters = lasagne.layers.get_all_params(self.l_out, trainable=True)
+        
+        #print(params)
+        #updates = lasagne.updates.nesterov_momentum(loss, parameters, learning_rate=0.01, momentum=0.9)
+        #updates = lasagne.updates.sgd(loss, parameters, learning_rate=0.01)
+        #updates = lasagne.updates.adagrad(loss, parameters, learning_rate=0.1, epsilon=1e-6)
+        #updates = lasagne.updates.adadelta(loss, parameters, learning_rate=0.1, rho=0.95, epsilon=1e-6)
+        updates = lasagne.updates.adam(loss, parameters, learning_rate=0.001, beta1=0.9, beta2=0.999, epsilon=1e-8)
+        
+        self.f_train = theano.function([self.X_sym, self.y_sym], [loss, acc], updates=updates)
+        self.f_val = theano.function([self.X_sym, self.y_sym], [loss, acc])
+        self.f_predict = theano.function([self.X_sym], pred)
+        self.f_predict_proba = theano.function([self.X_sym], self.output)
+        
+        
+        X_train = X_train.astype('float32')
+        X_dev = X_dev.astype('float32')
+    
+        if self.complete_prob:
+            Y_train = Y_train.astype('float32')
+            Y_dev = Y_dev.astype('float32')
+        else:
+            Y_train = Y_train.astype('int32')
+            Y_dev = Y_dev.astype('int32')
+    
+        logging.info('training (n_epochs, batch_size) = (' + str(self.n_epochs) + ', ' + str(self.batch_size) + ')' )
+        n_validation_down = 0
+        for n in xrange(self.n_epochs):
+            for batch in iterate_minibatches(X_train, Y_train, self.batch_size, shuffle=True):
+                x_batch, y_batch = batch
+                l_train, acc_train = self.f_train(x_batch, y_batch)
+                l_val, acc_val = self.f_val(X_dev, Y_dev)
+            if acc_val > best_val_acc:
+                best_val_acc = acc_val
+                best_params = lasagne.layers.get_all_param_values(self.l_out)
+                n_validation_down = 0
+            else:
+                #early stopping
+                n_validation_down += 1
+            logging.info('epoch ' + str(n) + ' ,train_loss ' + str(l_train) + ' ,acc ' + str(acc_train) + ' ,val_loss ' + str(l_val) + ' ,acc ' + str(acc_val) + ',best_val_acc ' + str(best_val_acc))
+            if n_validation_down > 2:
+                logging.info('validation results went down. early stopping ...')
+                break
+        
+        lasagne.layers.set_all_param_values(self.l_out, best_params)
+        
+        logging.info('***************** final results based on best validation **************')
+        l_val, acc_val = self.f_val(X_dev, Y_dev)
+        logging.info('Best dev acc: %f' %(acc_val))
+        
+    def predict(self, X_test):
+        X_test = X_test.astype('float32')
+        return self.f_predict(X_test)
+    
+    def predict_proba(self, X_test):
+        X_test = X_test.astype('float32')
+        return self.f_predict_proba(X_test)
+    
+    def accuracy(self, X_test, Y_test):
+        X_test = X_test.astype('float32')
+        if self.complete_prob:
+            Y_test = Y_test.astype('float32')
+        else:
+            Y_test = Y_test.astype('int32')
+        test_loss, test_acc = self.f_val(X_test, Y_test)
+        return test_acc
+    
 def load_geolocation_data(mindf=10, complete_prob=True, regression=False):
 
     geolocate.initialize(granularity=params.BUCKET_SIZE, write=False, readText=True, reload_init=False, regression=params.do_not_discretize)
