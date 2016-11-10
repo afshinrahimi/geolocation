@@ -246,7 +246,8 @@ class MLP():
                  drop_out=False, 
                  drop_out_coefs=[0.5, 0.5],
                  early_stopping_max_down=100000,
-                 loss_name='log'):
+                 loss_name='log',
+                 nonlinearity='rectify'):
         self.n_epochs = n_epochs
         self.batch_size = batch_size
         self.init_parameters = init_parameters
@@ -259,6 +260,7 @@ class MLP():
         self.drop_out_coefs = drop_out_coefs
         self.early_stopping_max_down = early_stopping_max_down
         self.loss_name = loss_name
+        self.nonlinearity = 'rectify'
 
     def fit(self, X_train, Y_train, X_dev, Y_dev):
         logging.info('building the network...' + ' hidden:' + str(self.add_hidden))
@@ -291,6 +293,15 @@ class MLP():
         l_in = lasagne.layers.InputLayer(shape=(None, in_size),
                                          input_var=self.X_sym)
         
+        if self.nonlinearity == 'rectify':
+            nonlinearity = lasagne.nonlinearities.rectify
+        elif self.nonlinearity == 'sigmoid':
+            nonlinearity = lasagne.nonlinearities.sigmoid
+        elif self.nonlinearity == 'tanh':
+            nonlinearity = lasagne.nonlinearities.tanh
+        else:
+            nonlinearity = lasagne.nonlinearities.rectify
+
         if self.drop_out:
             l_in = lasagne.layers.dropout(l_in, p=drop_out_in)
     
@@ -298,12 +309,12 @@ class MLP():
             if not sp.sparse.issparse(X_train):
                 l_hid1 = lasagne.layers.DenseLayer(
                     l_in, num_units=self.hidden_layer_size,
-                    nonlinearity=lasagne.nonlinearities.rectify,
+                    nonlinearity=nonlinearity,
                     W=lasagne.init.GlorotUniform())
             else:
                 l_hid1 = SparseInputDenseLayer(
                     l_in, num_units=self.hidden_layer_size,
-                    nonlinearity=lasagne.nonlinearities.rectify,
+                    nonlinearity=nonlinearity,
                     W=lasagne.init.GlorotUniform())
             if self.drop_out:
                 self.l_hid1 = lasagne.layers.dropout(l_hid1, drop_out_hid)
